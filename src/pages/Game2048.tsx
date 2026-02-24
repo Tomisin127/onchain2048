@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useAccount, useDisconnect } from 'wagmi';
 import { ethers } from 'ethers';
-import { parseEther } from 'viem';
+import { Attribution } from 'ox/erc8021';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { GameBoard } from '@/components/GameBoard';
@@ -16,6 +16,8 @@ import { Direction } from '@/types/game';
 const MOVE_COST_USD = 0.0001;
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
 const NATIVE_TOKEN = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'; // ERC-7528
+const BUILDER_CODE = 'bc_dh0rqw67';
+const ERC8021_SUFFIX = Attribution.toDataSuffix({ codes: [BUILDER_CODE] });
 
 export default function Game2048Page() {
   const { ready, authenticated, login, logout, user } = usePrivy();
@@ -170,7 +172,7 @@ export default function Game2048Page() {
       const moveCostEth = (MOVE_COST_USD / ethPrice).toFixed(18);
       const moveCostWei = ethers.parseEther(moveCostEth);
 
-      // Privy: optimistic fire-and-forget
+      // 🚀 OPTIMISTIC UI: Handle Privy wallet (fire-and-forget, instant board update)
       if (isUsingPrivy) {
         const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
         if (!embeddedWallet) {
@@ -179,37 +181,44 @@ export default function Game2048Page() {
           return;
         }
 
-        // Execute game logic FIRST to check if move is valid
+        // 1️⃣ Immediately decrement available moves (optimistic)
+        setOptimisticMovesUsed(prev => prev + 1);
+
+        // 2️⃣ Execute game logic IMMEDIATELY (optimistic board update)
         const result = gameMakeMove(direction);
 
         if (result.moved) {
-          // Only decrement moves if the move actually happened
-          setOptimisticMovesUsed(prev => prev + 1);
           playMoveSound();
           checkMilestones();
-
-          // Fire transaction in background (matching original repo method)
-          (async () => {
-            try {
-              const provider = await embeddedWallet.getEthereumProvider();
-              const txHash = await provider.request({
-                method: 'eth_sendTransaction',
-                params: [{
-                  from: embeddedWallet.address,
-                  to: CREATOR_ADDRESS,
-                  value: '0x' + moveCostWei.toString(16),
-                  gas: '0x186A0',
-                }],
-              });
-              console.log('✅ Transaction sent:', txHash);
-              console.log('   View on Basescan:', `https://basescan.org/tx/${txHash}`);
-              setPendingTransactions(prev => [...prev, txHash as string]);
-            } catch (error) {
-              console.error('❌ Background transaction failed:', error);
-              setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
-            }
-          })();
         }
+
+        // 3️⃣ Fire transaction in background with ERC-8021 attribution
+        (async () => {
+          try {
+            const provider = await embeddedWallet.getEthereumProvider();
+
+            const txHash = await provider.request({
+              method: 'eth_sendTransaction',
+              params: [{
+                from: embeddedWallet.address,
+                to: CREATOR_ADDRESS,
+                value: '0x' + moveCostWei.toString(16),
+                gas: '0x186A0',
+                data: ERC8021_SUFFIX,
+              }],
+            });
+
+            console.log('✅ ERC-4337 UserOp sent with Base builder attribution:');
+            console.log('   TX Hash:', txHash);
+            console.log('   Builder Code:', BUILDER_CODE);
+            console.log('   View on Basescan:', `https://basescan.org/tx/${txHash}`);
+
+            setPendingTransactions(prev => [...prev, txHash as string]);
+          } catch (error) {
+            console.error('❌ Background transaction failed:', error);
+            setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
+          }
+        })();
 
         setIsProcessing(false);
         return;
