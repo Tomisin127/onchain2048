@@ -241,8 +241,8 @@ export function use2048Game() {
         case 'down':
           for (let r = 0; r < 4; r++)
             for (let c = 0; c < 4; c++) {
-              result[c][3 - r] = g[3 - r][c];
-              if (mergedSet.has(`${3 - r}-${c}`)) newMerged.add(`${c}-${3 - r}`);
+              result[c][3 - r] = g[r][c];
+              if (mergedSet.has(`${r}-${c}`)) newMerged.add(`${c}-${3 - r}`);
             }
           break;
       }
