@@ -182,99 +182,75 @@ export function use2048Game() {
     }
   }, [score, highScore]);
 
+  // Rotate board 90° clockwise
+  const rotateBoard = (board: number[][]): number[][] => {
+    const newBoard = createEmptyGrid();
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) {
+        newBoard[j][3 - i] = board[i][j];
+      }
+    }
+    return newBoard;
+  };
+
   const makeMove = useCallback((direction: Direction): { moved: boolean; points: number } => {
     if (gameOver) return { moved: false, points: 0 };
 
-    const grid = gridRef.current.map(row => [...row]);
+    let board = gridRef.current.map(row => [...row]);
     let totalPoints = 0;
     let anyMoved = false;
+
+    // Transform: rotate so we always slide left, then rotate back
+    let rotations = 0;
+    if (direction === 'left') rotations = 0;
+    else if (direction === 'down') rotations = 1;
+    else if (direction === 'right') rotations = 2;
+    else if (direction === 'up') rotations = 3;
+
+    // Rotate board so the target direction becomes "left"
+    for (let r = 0; r < rotations; r++) board = rotateBoard(board);
+
+    // Slide all rows left
     const mergedPositions = new Set<string>();
-
-    // Transform grid based on direction, always process as left slide
-    const processGrid = (g: number[][]): number[][] => {
-      switch (direction) {
-        case 'left': return g;
-        case 'right': return g.map(row => [...row].reverse());
-        case 'up': {
-          const transposed = createEmptyGrid();
-          for (let r = 0; r < 4; r++)
-            for (let c = 0; c < 4; c++)
-              transposed[c][r] = g[r][c];
-          return transposed;
-        }
-        case 'down': {
-          const transposed = createEmptyGrid();
-          for (let r = 0; r < 4; r++)
-            for (let c = 0; c < 4; c++)
-              transposed[3 - c][r] = g[r][c];
-          return transposed;
-        }
-      }
-    };
-
-    const unprocessGrid = (g: number[][], mergedSet: Set<string>): { grid: number[][]; mergedPositions: Set<string> } => {
-      const result = createEmptyGrid();
-      const newMerged = new Set<string>();
-      
-      switch (direction) {
-        case 'left':
-          for (let r = 0; r < 4; r++)
-            for (let c = 0; c < 4; c++) {
-              result[r][c] = g[r][c];
-              if (mergedSet.has(`${r}-${c}`)) newMerged.add(`${r}-${c}`);
-            }
-          break;
-        case 'right':
-          for (let r = 0; r < 4; r++)
-            for (let c = 0; c < 4; c++) {
-              result[r][3 - c] = g[r][c];
-              if (mergedSet.has(`${r}-${c}`)) newMerged.add(`${r}-${3 - c}`);
-            }
-          break;
-        case 'up':
-          for (let r = 0; r < 4; r++)
-            for (let c = 0; c < 4; c++) {
-              result[c][r] = g[r][c];
-              if (mergedSet.has(`${r}-${c}`)) newMerged.add(`${c}-${r}`);
-            }
-          break;
-        case 'down':
-          for (let r = 0; r < 4; r++)
-            for (let c = 0; c < 4; c++) {
-              result[c][3 - r] = g[r][c];
-              if (mergedSet.has(`${r}-${c}`)) newMerged.add(`${c}-${3 - r}`);
-            }
-          break;
-      }
-      return { grid: result, mergedPositions: newMerged };
-    };
-
-    const processed = processGrid(grid);
-    const rawMergedPositions = new Set<string>();
-    
-    for (let r = 0; r < 4; r++) {
-      const { result, points, moved, mergedIndices } = slideRowLeft(processed[r]);
-      processed[r] = result;
+    for (let i = 0; i < 4; i++) {
+      const { result, points, moved, mergedIndices } = slideRowLeft(board[i]);
+      board[i] = result;
       totalPoints += points;
       if (moved) anyMoved = true;
-      mergedIndices.forEach(idx => rawMergedPositions.add(`${r}-${idx}`));
+      mergedIndices.forEach(idx => mergedPositions.add(`${i}-${idx}`));
     }
 
     if (!anyMoved) return { moved: false, points: 0 };
 
-    const { grid: finalGrid, mergedPositions: finalMerged } = unprocessGrid(processed, rawMergedPositions);
-    
-    const newTilePos = addRandomTile(finalGrid);
-    gridRef.current = finalGrid;
+    // Rotate back: need (4 - rotations) % 4 rotations
+    const backRotations = (4 - rotations) % 4;
+
+    // Also rotate merged positions back
+    const finalMerged = new Set<string>();
+    mergedPositions.forEach(pos => {
+      const [r, c] = pos.split('-').map(Number);
+      let nr = r, nc = c;
+      for (let rot = 0; rot < backRotations; rot++) {
+        const tmp = nr;
+        nr = nc;
+        nc = 3 - tmp;
+      }
+      finalMerged.add(`${nr}-${nc}`);
+    });
+
+    for (let r = 0; r < backRotations; r++) board = rotateBoard(board);
+
+    const newTilePos = addRandomTile(board);
+    gridRef.current = board;
 
     const prevTiles = tiles;
-    const newTiles = gridToTiles(finalGrid, prevTiles, direction, newTilePos, finalMerged);
+    const newTiles = gridToTiles(board, prevTiles, direction, newTilePos, finalMerged);
     
     setTiles(newTiles);
     setScore(prev => prev + totalPoints);
     setLastDirection(direction);
 
-    if (!hasValidMoves(finalGrid)) {
+    if (!hasValidMoves(board)) {
       setGameOver(true);
     }
 
