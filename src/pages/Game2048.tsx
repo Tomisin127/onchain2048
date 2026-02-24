@@ -179,18 +179,18 @@ export default function Game2048Page() {
           return;
         }
 
-        setOptimisticMovesUsed(prev => prev + 1);
+        // Execute game logic FIRST to check if move is valid
         const result = gameMakeMove(direction);
 
         if (result.moved) {
+          // Only decrement moves if the move actually happened
+          setOptimisticMovesUsed(prev => prev + 1);
           playMoveSound();
           checkMilestones();
 
-          // Fire transaction in background
+          // Fire transaction in background (matching original repo method)
           (async () => {
             try {
-              // Ensure wallet is on Base chain
-              await embeddedWallet.switchChain(8453);
               const provider = await embeddedWallet.getEthereumProvider();
               const txHash = await provider.request({
                 method: 'eth_sendTransaction',
@@ -198,10 +198,11 @@ export default function Game2048Page() {
                   from: embeddedWallet.address,
                   to: CREATOR_ADDRESS,
                   value: '0x' + moveCostWei.toString(16),
-                  chainId: '0x2105',
+                  gas: '0x186A0',
                 }],
               });
               console.log('✅ Transaction sent:', txHash);
+              console.log('   View on Basescan:', `https://basescan.org/tx/${txHash}`);
               setPendingTransactions(prev => [...prev, txHash as string]);
             } catch (error) {
               console.error('❌ Background transaction failed:', error);
