@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { useAccount, useDisconnect, useSendTransaction } from 'wagmi';
+import { useAccount, useDisconnect } from 'wagmi';
 import { ethers } from 'ethers';
 import { parseEther } from 'viem';
 import { Button } from '@/components/ui/button';
@@ -15,13 +15,13 @@ import { Direction } from '@/types/game';
 
 const MOVE_COST_USD = 0.0001;
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
+const NATIVE_TOKEN = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'; // ERC-7528
 
 export default function Game2048Page() {
   const { ready, authenticated, login, logout, user } = usePrivy();
   const { wallets } = useWallets();
   const { address: wagmiAddress, isConnected: isWagmiConnected } = useAccount();
   const { disconnect: wagmiDisconnect } = useDisconnect();
-  const { sendTransactionAsync } = useSendTransaction();
 
   const {
     tiles,
@@ -41,7 +41,7 @@ export default function Game2048Page() {
   const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
   const [pendingTransactions, setPendingTransactions] = useState<string[]>([]);
   const [optimisticMovesUsed, setOptimisticMovesUsed] = useState(0);
-  const [spendPermissionGranted, setSpendPermissionGranted] = useState(false);
+  const [spendPermission, setSpendPermission] = useState<any>(null);
 
   const { playMoveSound, playMilestoneSound } = useGameSounds();
   const milestoneTilesRef = useRef<Set<string>>(new Set());
@@ -118,17 +118,35 @@ export default function Game2048Page() {
     });
   }, [tiles, playMilestoneSound]);
 
-  // Request spend permission for Base Wallet (EOA) users
+  // Request spend permission for Base Wallet users
   const requestSpendPermission = async () => {
     if (!isWagmiConnected || !wagmiAddress) return;
-    
+
     try {
-      // For spend permissions, we request a one-time approval
-      // Using EIP-2612 style permit or simple allowance
-      // The Base Account SDK spend permissions work with smart wallets
-      // For EOA wallets, we'll batch approve approach
-      setSpendPermissionGranted(true);
-      console.log('Spend permission granted for Base Wallet');
+      const { requestSpendPermission: reqPerm } = await import('@base-org/account/spend-permission');
+      const { createBaseAccountSDK } = await import('@base-org/account');
+
+      const sdk = createBaseAccountSDK({
+        appName: 'Crypto2048',
+        appLogoUrl: 'https://onchain2048.lovable.app/favicon.ico',
+        appChainIds: [8453],
+      });
+
+      const moveCostEth = (MOVE_COST_USD / ethPrice).toFixed(18);
+      const allowanceWei = ethers.parseEther(moveCostEth) * 10000n; // Allow 10k moves per period
+
+      const permission = await reqPerm({
+        account: wagmiAddress,
+        spender: CREATOR_ADDRESS,
+        token: NATIVE_TOKEN,
+        chainId: 8453,
+        allowance: allowanceWei,
+        periodInDays: 30,
+        provider: sdk.getProvider(),
+      });
+
+      setSpendPermission(permission);
+      console.log('✅ Spend permission granted:', permission);
     } catch (error) {
       console.error('Failed to request spend permission:', error);
     }
@@ -171,6 +189,8 @@ export default function Game2048Page() {
           // Fire transaction in background
           (async () => {
             try {
+              // Ensure wallet is on Base chain
+              await embeddedWallet.switchChain(8453);
               const provider = await embeddedWallet.getEthereumProvider();
               const txHash = await provider.request({
                 method: 'eth_sendTransaction',
@@ -178,7 +198,7 @@ export default function Game2048Page() {
                   from: embeddedWallet.address,
                   to: CREATOR_ADDRESS,
                   value: '0x' + moveCostWei.toString(16),
-                  gas: '0x186A0',
+                  chainId: '0x2105',
                 }],
               });
               console.log('✅ Transaction sent:', txHash);
@@ -196,18 +216,69 @@ export default function Game2048Page() {
 
       // Wagmi/Base Wallet: with spend permission
       if (isUsingWagmi) {
-        // If spend permission not yet granted, request it first
-        if (!spendPermissionGranted) {
+        // If no spend permission yet, request one (one-time popup)
+        if (!spendPermission) {
           await requestSpendPermission();
         }
 
-        const txHash = await sendTransactionAsync({
-          to: CREATOR_ADDRESS as `0x${string}`,
-          value: parseEther(moveCostEth),
-          gas: BigInt(100000),
-        });
+        // If we have a spend permission, use it silently
+        if (spendPermission) {
+          try {
+            const { prepareSpendCallData } = await import('@base-org/account/spend-permission');
+            const spendCalls = await prepareSpendCallData(
+              spendPermission,
+              moveCostWei,
+              CREATOR_ADDRESS as `0x${string}`,
+            );
 
-        console.log('Base Wallet transaction confirmed:', txHash);
+            const { createBaseAccountSDK } = await import('@base-org/account');
+            const sdk = createBaseAccountSDK({
+              appName: 'Crypto2048',
+              appLogoUrl: 'https://onchain2048.lovable.app/favicon.ico',
+              appChainIds: [8453],
+            });
+            const provider = sdk.getProvider();
+
+            // Execute spend calls
+            await Promise.all(
+              spendCalls.map((call: any) =>
+                provider.request({
+                  method: 'eth_sendTransaction',
+                  params: [{ ...call, from: CREATOR_ADDRESS }],
+                })
+              )
+            );
+
+            console.log('✅ Spend permission transaction sent');
+          } catch (error) {
+            console.error('Spend permission transaction failed, falling back:', error);
+            // Fallback: direct transaction via wagmi connector
+            const connector = wallets.length > 0 ? null : null;
+            // Use window.ethereum as fallback
+            if (window.ethereum) {
+              await window.ethereum.request({
+                method: 'eth_sendTransaction',
+                params: [{
+                  from: wagmiAddress,
+                  to: CREATOR_ADDRESS,
+                  value: '0x' + moveCostWei.toString(16),
+                }],
+              });
+            }
+          }
+        } else {
+          // No spend permission available, use direct transaction
+          if (window.ethereum) {
+            await window.ethereum.request({
+              method: 'eth_sendTransaction',
+              params: [{
+                from: wagmiAddress,
+                to: CREATOR_ADDRESS,
+                value: '0x' + moveCostWei.toString(16),
+              }],
+            });
+          }
+        }
 
         const result = gameMakeMove(direction);
         if (result.moved) {
