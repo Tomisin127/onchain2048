@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { useSmartWallets } from '@privy-io/react-auth/smart-wallets';
 import { useAccount, useDisconnect } from 'wagmi';
 import { ethers } from 'ethers';
+import { base } from 'viem/chains';
 import { Attribution } from 'ox/erc8021';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -22,6 +24,7 @@ const ERC8021_SUFFIX = Attribution.toDataSuffix({ codes: [BUILDER_CODE] });
 export default function Game2048Page() {
   const { ready, authenticated, login, logout, user } = usePrivy();
   const { wallets } = useWallets();
+  const { getClientForChain } = useSmartWallets();
   const { address: wagmiAddress, isConnected: isWagmiConnected } = useAccount();
   const { disconnect: wagmiDisconnect } = useDisconnect();
 
@@ -181,39 +184,51 @@ export default function Game2048Page() {
           return;
         }
 
-        // 1️⃣ Immediately decrement available moves (optimistic)
-        setOptimisticMovesUsed(prev => prev + 1);
-
-        // 2️⃣ Execute game logic IMMEDIATELY (optimistic board update)
         const result = gameMakeMove(direction);
-
-        if (result.moved) {
-          playMoveSound();
-          checkMilestones();
+        if (!result.moved) {
+          setIsProcessing(false);
+          return;
         }
 
-        // 3️⃣ Fire transaction in background with ERC-8021 attribution
+        playMoveSound();
+        checkMilestones();
+        setOptimisticMovesUsed(prev => prev + 1);
+
         (async () => {
           try {
-            const provider = await embeddedWallet.getEthereumProvider();
+            let txHash: string;
 
-            const txHash = await provider.request({
-              method: 'eth_sendTransaction',
-              params: [{
-                from: embeddedWallet.address,
-                to: CREATOR_ADDRESS,
-                value: '0x' + moveCostWei.toString(16),
-                gas: '0x186A0',
-                data: ERC8021_SUFFIX,
-              }],
-            });
+            try {
+              const baseClient = (await getClientForChain({ id: base.id })) as any;
+              txHash = await baseClient.sendTransaction({
+                calls: [{
+                  to: CREATOR_ADDRESS,
+                  value: moveCostWei,
+                  data: ERC8021_SUFFIX,
+                }],
+              });
+            } catch (smartWalletError) {
+              console.warn('Smart wallet client transaction failed, falling back to provider.request', smartWalletError);
+              const provider = await embeddedWallet.getEthereumProvider();
+              txHash = await provider.request({
+                method: 'eth_sendTransaction',
+                params: [{
+                  from: embeddedWallet.address,
+                  to: CREATOR_ADDRESS,
+                  value: '0x' + moveCostWei.toString(16),
+                  gas: '0x186A0',
+                  data: ERC8021_SUFFIX,
+                  chainId: '0x2105',
+                }],
+              }) as string;
+            }
 
             console.log('✅ ERC-4337 UserOp sent with Base builder attribution:');
             console.log('   TX Hash:', txHash);
             console.log('   Builder Code:', BUILDER_CODE);
             console.log('   View on Basescan:', `https://basescan.org/tx/${txHash}`);
 
-            setPendingTransactions(prev => [...prev, txHash as string]);
+            setPendingTransactions(prev => [...prev, txHash]);
           } catch (error) {
             console.error('❌ Background transaction failed:', error);
             setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
