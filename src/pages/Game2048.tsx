@@ -4,7 +4,6 @@ import { useSmartWallets } from '@privy-io/react-auth/smart-wallets';
 import { useAccount, useDisconnect } from 'wagmi';
 import { ethers } from 'ethers';
 import { base } from 'viem/chains';
-import { Attribution } from 'ox/erc8021';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { GameBoard } from '@/components/GameBoard';
@@ -19,12 +18,13 @@ const MOVE_COST_USD = 0.0001;
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
 const NATIVE_TOKEN = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'; // ERC-7528
 const BUILDER_CODE = 'bc_dh0rqw67';
-const ERC8021_SUFFIX = Attribution.toDataSuffix({ codes: [BUILDER_CODE] });
+// ERC-8021 data suffix for builder attribution
+const ERC8021_SUFFIX = ('0x00f1d0' + Array.from(new TextEncoder().encode(BUILDER_CODE)).map(b => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`;
 
 export default function Game2048Page() {
   const { ready, authenticated, login, logout, user } = usePrivy();
   const { wallets } = useWallets();
-  const { getClientForChain } = useSmartWallets();
+  const { client } = useSmartWallets();
   const { address: wagmiAddress, isConnected: isWagmiConnected } = useAccount();
   const { disconnect: wagmiDisconnect } = useDisconnect();
 
@@ -196,34 +196,19 @@ export default function Game2048Page() {
 
         (async () => {
           try {
-            let txHash: string;
-
-            try {
-              const baseClient = (await getClientForChain({ id: base.id })) as any;
-              txHash = await baseClient.sendTransaction({
-                calls: [{
-                  to: CREATOR_ADDRESS,
-                  value: moveCostWei,
-                  data: ERC8021_SUFFIX,
-                }],
-              });
-            } catch (smartWalletError) {
-              console.warn('Smart wallet client transaction failed, falling back to provider.request', smartWalletError);
-              const provider = await embeddedWallet.getEthereumProvider();
-              txHash = await provider.request({
-                method: 'eth_sendTransaction',
-                params: [{
-                  from: embeddedWallet.address,
-                  to: CREATOR_ADDRESS,
-                  value: '0x' + moveCostWei.toString(16),
-                  gas: '0x186A0',
-                  data: ERC8021_SUFFIX,
-                  chainId: '0x2105',
-                }],
-              }) as string;
+            if (!client) {
+              console.error('Smart wallet client not ready');
+              setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
+              return;
             }
 
-            console.log('✅ ERC-4337 UserOp sent with Base builder attribution:');
+            const txHash = await (client as any).sendTransaction({
+              to: CREATOR_ADDRESS as `0x${string}`,
+              value: moveCostWei,
+              data: ERC8021_SUFFIX,
+            });
+
+            console.log('✅ Smart wallet tx sent with ERC-8021 attribution:');
             console.log('   TX Hash:', txHash);
             console.log('   Builder Code:', BUILDER_CODE);
             console.log('   View on Basescan:', `https://basescan.org/tx/${txHash}`);
