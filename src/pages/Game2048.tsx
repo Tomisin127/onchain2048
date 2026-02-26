@@ -155,6 +155,53 @@ export default function Game2048Page() {
     }
   };
 
+  const getPrivyBaseClient = useCallback(async () => {
+    if (getClientForChain) {
+      try {
+        return await getClientForChain({ id: base.id });
+      } catch (error) {
+        console.error('Failed to initialize Base smart wallet client:', error);
+      }
+    }
+
+    return client ?? null;
+  }, [getClientForChain, client]);
+
+  const sendPrivyMoveTransaction = useCallback(
+    async (embeddedWallet: (typeof wallets)[number], moveCostWei: bigint) => {
+      const smartWalletClient = await getPrivyBaseClient();
+
+      if (smartWalletClient?.sendTransaction) {
+        return await smartWalletClient.sendTransaction({
+          chain: base,
+          to: CREATOR_ADDRESS as `0x${string}`,
+          value: moveCostWei,
+          data: '0x',
+          gas: 100000n,
+        });
+      }
+
+      const provider = await embeddedWallet.getEthereumProvider();
+      const accounts = (await provider.request({ method: 'eth_accounts' })) as string[];
+      const from = accounts[0] || embeddedWallet.address;
+
+      return await provider.request({
+        method: 'eth_sendTransaction',
+        params: [
+          {
+            from,
+            to: CREATOR_ADDRESS,
+            value: `0x${moveCostWei.toString(16)}`,
+            data: '0x',
+            gas: '0x186A0',
+            chainId: '0x2105',
+          },
+        ],
+      });
+    },
+    [getPrivyBaseClient, wallets]
+  );
+
   const makeMove = async (direction: Direction) => {
     if (gameOver || isProcessing) return;
 
