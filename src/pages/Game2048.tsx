@@ -173,7 +173,6 @@ export default function Game2048Page() {
 
       if (smartWalletClient?.sendTransaction) {
         return await smartWalletClient.sendTransaction({
-          chain: base,
           to: CREATOR_ADDRESS as `0x${string}`,
           value: moveCostWei,
           data: '0x',
