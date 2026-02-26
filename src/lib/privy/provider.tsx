@@ -25,7 +25,6 @@ export function PrivyWrapper({ children }: { children: ReactNode }) {
         },
         defaultChain: base,
         supportedChains: [base],
-        plugins: [dataSuffix(ERC_8021_ATTRIBUTION_SUFFIX)],
       }}
     >
       <SmartWalletsProvider>{children}</SmartWalletsProvider>

@@ -175,10 +175,14 @@ export default function Game2048Page() {
 
       if (smartWalletClient?.sendTransaction) {
         return await (smartWalletClient as any).sendTransaction({
-          to: CREATOR_ADDRESS as `0x${string}`,
-          value: moveCostWei,
-          data: '0x',
-          gas: 100000n,
+          calls: [
+            {
+              to: CREATOR_ADDRESS as `0x${string}`,
+              value: moveCostWei,
+              data: ERC_8021_SUFFIX,
+            },
+          ],
+          chain: base,
         });
       }
 
@@ -193,7 +197,7 @@ export default function Game2048Page() {
             from,
             to: CREATOR_ADDRESS,
             value: `0x${moveCostWei.toString(16)}`,
-            data: '0x',
+            data: ERC_8021_SUFFIX,
             gas: '0x186A0',
             chainId: '0x2105',
           },
