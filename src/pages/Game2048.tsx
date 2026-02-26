@@ -18,13 +18,11 @@ const MOVE_COST_USD = 0.0001;
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
 const NATIVE_TOKEN = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'; // ERC-7528
 const BUILDER_CODE = 'bc_dh0rqw67';
-// ERC-8021 data suffix for builder attribution
-const ERC8021_SUFFIX = ('0x00f1d0' + Array.from(new TextEncoder().encode(BUILDER_CODE)).map(b => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`;
 
 export default function Game2048Page() {
   const { ready, authenticated, login, logout, user } = usePrivy();
   const { wallets } = useWallets();
-  const { client } = useSmartWallets();
+  const { client, getClientForChain } = useSmartWallets();
   const { address: wagmiAddress, isConnected: isWagmiConnected } = useAccount();
   const { disconnect: wagmiDisconnect } = useDisconnect();
 
