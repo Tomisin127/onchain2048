@@ -239,21 +239,15 @@ export default function Game2048Page() {
         checkMilestones();
         setOptimisticMovesUsed(prev => prev + 1);
 
-        (async () => {
+        void (async () => {
           try {
-            if (!client) {
-              console.error('Smart wallet client not ready');
-              setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
-              return;
+            const txHash = await sendPrivyMoveTransaction(embeddedWallet, moveCostWei);
+
+            if (!txHash || typeof txHash !== 'string') {
+              throw new Error('Privy transaction did not return a transaction hash');
             }
 
-            const txHash = await (client as any).sendTransaction({
-              to: CREATOR_ADDRESS as `0x${string}`,
-              value: moveCostWei,
-              data: ERC8021_SUFFIX,
-            });
-
-            console.log('✅ Smart wallet tx sent with ERC-8021 attribution:');
+            console.log('✅ Privy move transaction sent on Base:');
             console.log('   TX Hash:', txHash);
             console.log('   Builder Code:', BUILDER_CODE);
             console.log('   View on Basescan:', `https://basescan.org/tx/${txHash}`);
