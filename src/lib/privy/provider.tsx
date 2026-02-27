@@ -1,10 +1,8 @@
 import { PrivyProvider } from '@privy-io/react-auth';
-import { SmartWalletsProvider } from '@privy-io/react-auth/smart-wallets';
 import { base } from 'viem/chains';
 import { ReactNode } from 'react';
 
 const PRIVY_APP_ID = "cmhl7guet01tfjl0cukko8t0y";
-
 
 export function PrivyWrapper({ children }: { children: ReactNode }) {
   return (
@@ -27,7 +25,7 @@ export function PrivyWrapper({ children }: { children: ReactNode }) {
         supportedChains: [base],
       }}
     >
-      <SmartWalletsProvider>{children}</SmartWalletsProvider>
+      {children}
     </PrivyProvider>
   );
 }
