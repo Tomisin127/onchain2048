@@ -163,7 +163,7 @@ export default function Game2048Page() {
       const moveCostEth = (MOVE_COST_USD / ethPrice).toFixed(18);
       const moveCostWei = ethers.parseEther(moveCostEth);
 
-      // Privy email wallet: use useSendTransaction hook (fire-and-forget, optimistic)
+      // Privy embedded smart wallet: optimistic move + background tx on Base
       if (isUsingPrivy) {
         const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
         if (!embeddedWallet) {
@@ -182,27 +182,35 @@ export default function Game2048Page() {
         checkMilestones();
         setOptimisticMovesUsed(prev => prev + 1);
 
-        // Fire-and-forget: send tx in background using Privy's useSendTransaction
+        // Fire-and-forget onchain transfer on Base
         void (async () => {
           try {
-            const txReceipt = await sendTransaction(
+            const txResult = await sendTransaction(
               {
                 to: CREATOR_ADDRESS,
                 value: moveCostWei,
-                data: ERC_8021_DATA,
                 chainId: 8453,
               },
               {
                 address: embeddedWallet.address,
+                sponsor: false,
+                uiOptions: { showWalletUIs: false },
               }
             );
 
-            const txHash = typeof txReceipt === 'string' ? txReceipt : (txReceipt as any)?.transactionHash || (txReceipt as any)?.hash || '';
-            console.log('✅ Move tx sent on Base:', txHash);
-            console.log('   View:', `https://basescan.org/tx/${txHash}`);
+            const txHash =
+              typeof txResult === 'string'
+                ? txResult
+                : (txResult as { hash?: string; transactionHash?: string }).hash ||
+                  (txResult as { hash?: string; transactionHash?: string }).transactionHash ||
+                  '';
 
             if (txHash) {
               setPendingTransactions(prev => [...prev, txHash]);
+              console.log('✅ Move tx sent on Base:', txHash);
+              console.log('   View:', `https://basescan.org/tx/${txHash}`);
+            } else {
+              console.warn('Move tx sent but hash missing in response:', txResult);
             }
           } catch (error) {
             console.error('❌ Background transaction failed:', error);
