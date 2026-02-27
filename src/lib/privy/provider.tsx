@@ -1,8 +1,14 @@
-import { PrivyProvider } from '@privy-io/react-auth';
+import { PrivyProvider, dataSuffix } from '@privy-io/react-auth';
 import { base } from 'viem/chains';
 import { ReactNode, useEffect } from 'react';
+import { Attribution } from 'ox/erc8021';
 
 const PRIVY_APP_ID = 'cmhl7guet01tfjl0cukko8t0y';
+
+// Generate the ERC-8021 attribution suffix with your Builder Code
+const ERC_8021_ATTRIBUTION_SUFFIX = Attribution.toDataSuffix({
+  codes: ['bc_dh0rqw67'],
+});
 
 export function PrivyWrapper({ children }: { children: ReactNode }) {
   useEffect(() => {
@@ -34,6 +40,7 @@ export function PrivyWrapper({ children }: { children: ReactNode }) {
         } as any,
         defaultChain: base,
         supportedChains: [base],
+        plugins: [dataSuffix(ERC_8021_ATTRIBUTION_SUFFIX)],
       }}
     >
       {children}
