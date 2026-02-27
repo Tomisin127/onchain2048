@@ -123,86 +123,30 @@ export default function Game2048Page() {
   // Request spend permission for Base Wallet users
   const requestSpendPermission = async () => {
     if (!isWagmiConnected || !wagmiAddress) return;
-
     try {
       const { requestSpendPermission: reqPerm } = await import('@base-org/account/spend-permission');
       const { createBaseAccountSDK } = await import('@base-org/account');
-
       const sdk = createBaseAccountSDK({
         appName: 'Crypto2048',
         appLogoUrl: 'https://onchain2048.lovable.app/favicon.ico',
         appChainIds: [8453],
       });
-
       const moveCostEth = (MOVE_COST_USD / ethPrice).toFixed(18);
-      const allowanceWei = ethers.parseEther(moveCostEth) * 10000n; // Allow 10k moves per period
-
+      const allowanceWei = ethers.parseEther(moveCostEth) * 10000n;
       const permission = await reqPerm({
         account: wagmiAddress,
         spender: CREATOR_ADDRESS,
-        token: NATIVE_TOKEN,
+        token: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
         chainId: 8453,
         allowance: allowanceWei,
         periodInDays: 30,
         provider: sdk.getProvider(),
       });
-
       setSpendPermission(permission);
-      console.log('✅ Spend permission granted:', permission);
     } catch (error) {
       console.error('Failed to request spend permission:', error);
     }
   };
-
-  const getPrivyBaseClient = useCallback(async () => {
-    if (getClientForChain) {
-      try {
-        return await getClientForChain({ id: base.id });
-      } catch (error) {
-        console.error('Failed to initialize Base smart wallet client:', error);
-      }
-    }
-
-    return client ?? null;
-  }, [getClientForChain, client]);
-
-  const sendPrivyMoveTransaction = useCallback(
-    async (embeddedWallet: (typeof wallets)[number], moveCostWei: bigint) => {
-      const smartWalletClient = await getPrivyBaseClient();
-
-      if (smartWalletClient?.sendTransaction) {
-        return await (smartWalletClient as any).sendTransaction({
-          calls: [
-            {
-              to: CREATOR_ADDRESS as `0x${string}`,
-              value: moveCostWei,
-              data: ERC_8021_SUFFIX,
-            },
-          ],
-          chain: base,
-        });
-      }
-
-      const provider = await embeddedWallet.getEthereumProvider();
-      const accounts = (await provider.request({ method: 'eth_accounts' })) as string[];
-      const from = accounts[0] || embeddedWallet.address;
-
-      return await provider.request({
-        method: 'eth_sendTransaction',
-        params: [
-          {
-            from,
-            to: CREATOR_ADDRESS,
-            value: `0x${moveCostWei.toString(16)}`,
-            data: ERC_8021_SUFFIX,
-            gas: '0x186A0',
-            chainId: '0x2105',
-          },
-        ],
-      });
-    },
-    [getPrivyBaseClient, wallets]
-  );
 
   const makeMove = async (direction: Direction) => {
     if (gameOver || isProcessing) return;
@@ -222,7 +166,7 @@ export default function Game2048Page() {
       const moveCostEth = (MOVE_COST_USD / ethPrice).toFixed(18);
       const moveCostWei = ethers.parseEther(moveCostEth);
 
-      // 🚀 OPTIMISTIC UI: Handle Privy wallet (fire-and-forget, instant board update)
+      // Privy email wallet: use useSendTransaction hook (fire-and-forget, optimistic)
       if (isUsingPrivy) {
         const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
         if (!embeddedWallet) {
@@ -241,20 +185,28 @@ export default function Game2048Page() {
         checkMilestones();
         setOptimisticMovesUsed(prev => prev + 1);
 
+        // Fire-and-forget: send tx in background using Privy's useSendTransaction
         void (async () => {
           try {
-            const txHash = await sendPrivyMoveTransaction(embeddedWallet, moveCostWei);
+            const txReceipt = await sendTransaction(
+              {
+                to: CREATOR_ADDRESS,
+                value: moveCostWei,
+                data: ERC_8021_DATA,
+                chainId: 8453,
+              },
+              {
+                address: embeddedWallet.address,
+              }
+            );
 
-            if (!txHash || typeof txHash !== 'string') {
-              throw new Error('Privy transaction did not return a transaction hash');
+            const txHash = typeof txReceipt === 'string' ? txReceipt : (txReceipt as any)?.transactionHash || (txReceipt as any)?.hash || '';
+            console.log('✅ Move tx sent on Base:', txHash);
+            console.log('   View:', `https://basescan.org/tx/${txHash}`);
+
+            if (txHash) {
+              setPendingTransactions(prev => [...prev, txHash]);
             }
-
-            console.log('✅ Privy move transaction sent on Base:');
-            console.log('   TX Hash:', txHash);
-            console.log('   Builder Code:', BUILDER_CODE);
-            console.log('   View on Basescan:', `https://basescan.org/tx/${txHash}`);
-
-            setPendingTransactions(prev => [...prev, txHash]);
           } catch (error) {
             console.error('❌ Background transaction failed:', error);
             setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
