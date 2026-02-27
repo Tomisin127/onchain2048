@@ -1,10 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { useSmartWallets } from '@privy-io/react-auth/smart-wallets';
+import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
 import { useAccount, useDisconnect } from 'wagmi';
 import { ethers } from 'ethers';
-import { Attribution } from 'ox/erc8021';
-import { base } from 'viem/chains';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { GameBoard } from '@/components/GameBoard';
@@ -17,14 +14,14 @@ import { Direction } from '@/types/game';
 
 const MOVE_COST_USD = 0.0001;
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
-const NATIVE_TOKEN = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'; // ERC-7528
 const BUILDER_CODE = 'bc_dh0rqw67';
-const ERC_8021_SUFFIX = Attribution.toDataSuffix({ codes: [BUILDER_CODE] }) as `0x${string}`;
+// ERC-8021 attribution suffix: 0x00f1d0 + hex-encoded builder code
+const ERC_8021_DATA = ('0x00f1d0' + Array.from(new TextEncoder().encode(BUILDER_CODE)).map(b => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`;
 
 export default function Game2048Page() {
   const { ready, authenticated, login, logout, user } = usePrivy();
   const { wallets } = useWallets();
-  const { client, getClientForChain } = useSmartWallets();
+  const { sendTransaction } = useSendTransaction();
   const { address: wagmiAddress, isConnected: isWagmiConnected } = useAccount();
   const { disconnect: wagmiDisconnect } = useDisconnect();
 
