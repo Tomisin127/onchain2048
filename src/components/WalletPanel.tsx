@@ -70,9 +70,12 @@ export function WalletPanel({
         </div>
       </div>
 
-      {actualMoves <= 0 && (
+      {actualMoves <= 3 && (
         <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 p-3 rounded-lg">
-          Fund your wallet to continue playing
+          {actualMoves <= 0 
+            ? 'Fund your wallet to continue playing'
+            : `Low balance! Only ${actualMoves} move${actualMoves === 1 ? '' : 's'} remaining. Fund your wallet to continue.`
+          }
         </div>
       )}
     </Card>

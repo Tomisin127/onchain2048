@@ -131,8 +131,9 @@ export default function Game2048Page() {
     const isUsingWagmi = isWagmiConnected && wagmiAddress;
     const actualMoves = remainingMoves - optimisticMovesUsed;
 
-    if (isUsingPrivy && actualMoves <= 0) {
-      alert('Insufficient balance! Please fund your wallet.');
+    // Block gameplay when 3 or fewer moves left - prompt user to fund wallet
+    if (actualMoves <= 3) {
+      alert(`Only ${actualMoves} move${actualMoves === 1 ? '' : 's'} remaining! Please fund your wallet to continue playing.`);
       return;
     }
 
