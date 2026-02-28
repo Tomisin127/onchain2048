@@ -22,7 +22,7 @@ export default function Game2048Page() {
   const { sendTransaction } = useSendTransaction();
   const { address: wagmiAddress, isConnected: isWagmiConnected } = useAccount();
   const { disconnect: wagmiDisconnect } = useDisconnect();
-  const { sendCalls } = useSendCalls();
+  const { sendTransactionAsync: wagmiSendTx } = useWagmiSendTransaction();
 
   const {
     tiles,
