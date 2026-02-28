@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
-import { useAccount, useDisconnect, useSendCalls } from 'wagmi';
+import { useAccount, useDisconnect, useSendTransaction as useWagmiSendTransaction } from 'wagmi';
 import { parseEther } from 'viem';
-import { Attribution } from 'ox/erc8021';
 import { ethers } from 'ethers';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -15,12 +14,7 @@ import { use2048Game } from '@/hooks/use2048Game';
 import { Direction } from '@/types/game';
 
 const MOVE_COST_USD = 0.0001;
-const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
-
-// Base Builder Code Attribution
-const DATA_SUFFIX = Attribution.toDataSuffix({
-  codes: ['bc_dh0rqw67'],
-});
+const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249' as const;
 
 export default function Game2048Page() {
   const { ready, authenticated, login, logout, user } = usePrivy();
@@ -28,7 +22,7 @@ export default function Game2048Page() {
   const { sendTransaction } = useSendTransaction();
   const { address: wagmiAddress, isConnected: isWagmiConnected } = useAccount();
   const { disconnect: wagmiDisconnect } = useDisconnect();
-  const { sendCalls } = useSendCalls();
+  const { sendTransactionAsync: wagmiSendTx } = useWagmiSendTransaction();
 
   const {
     tiles,
@@ -202,37 +196,31 @@ export default function Game2048Page() {
         return;
       }
 
-      // Wagmi/Base Wallet: using useSendCalls with builder code attribution
+      // Wagmi/Base Wallet: tx must be approved before move applies
       if (isUsingWagmi) {
         try {
           const moveCostViemWei = parseEther(moveCostEth);
-          
-          // Use sendCalls with dataSuffix capability for builder code attribution
-          await sendCalls({
-            calls: [
-              {
-                to: CREATOR_ADDRESS as `0x${string}`,
-                value: moveCostViemWei,
-              },
-            ],
-            capabilities: {
-              dataSuffix: {
-                value: DATA_SUFFIX,
-                optional: true,
-              },
-            },
+
+          // Wait for user to approve the transaction — if they cancel, this throws
+          const txHash = await wagmiSendTx({
+            to: CREATOR_ADDRESS,
+            value: moveCostViemWei,
+            chainId: 8453,
           });
 
-          console.log('✅ Transaction sent with builder code attribution');
+          console.log('✅ Transaction approved:', txHash);
 
+          // Only apply the move after successful tx approval
           const result = gameMakeMove(direction);
           if (result.moved) {
             playMoveSound();
             checkMilestones();
+            setPendingTransactions(prev => [...prev, txHash]);
           }
         } catch (error) {
-          console.error('Transaction failed:', error);
-          throw error;
+          // User cancelled or tx failed — move is NOT applied
+          console.log('❌ Transaction cancelled or failed, move not applied:', error);
+          // Don't throw — just silently skip the move
         }
       } else {
         alert('Please connect a wallet first!');
