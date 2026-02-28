@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
-import { useAccount, useDisconnect, useSendCalls } from 'wagmi';
+import { useAccount, useDisconnect, useSendTransaction as useWagmiSendTransaction } from 'wagmi';
 import { parseEther } from 'viem';
-import { Attribution } from 'ox/erc8021';
 import { ethers } from 'ethers';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
