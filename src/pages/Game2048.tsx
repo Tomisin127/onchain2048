@@ -14,12 +14,7 @@ import { use2048Game } from '@/hooks/use2048Game';
 import { Direction } from '@/types/game';
 
 const MOVE_COST_USD = 0.0001;
-const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
-
-// Base Builder Code Attribution
-const DATA_SUFFIX = Attribution.toDataSuffix({
-  codes: ['bc_dh0rqw67'],
-});
+const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249' as const;
 
 export default function Game2048Page() {
   const { ready, authenticated, login, logout, user } = usePrivy();
