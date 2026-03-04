@@ -289,7 +289,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
   };
 
   const handleSwap = () => {
-    if (!address || !inputAmount) return;
+    if (!activeAddress || !inputAmount) return;
 
     try {
       const amountIn = isBuyMode 
