@@ -220,7 +220,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
     }
   }, [isSwapSuccess, onSwapSuccess]);
 
-  // Get quote (simplified - real implementation would call the quoter)
+  // Get real on-chain quote from Uniswap V3 Quoter
   const getQuote = useCallback(async (amount: string) => {
     if (!amount || parseFloat(amount) === 0) {
       setOutputAmount('');
@@ -229,16 +229,36 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
 
     setIsQuoting(true);
     try {
-      // For simplicity, we'll estimate based on a rough rate
-      // In production, you'd call the Quoter contract
-      const inputNum = parseFloat(amount);
-      // Rough estimate: 1 ETH = ~1000000 tokens (adjust based on actual rate)
-      const estimatedRate = isBuyMode ? 1000000 : 0.000001;
-      const estimated = inputNum * estimatedRate * (1 - 0.01); // 1% fee estimate
-      setOutputAmount(estimated.toFixed(isBuyMode ? 2 : 8));
+      const amountIn = isBuyMode
+        ? parseEther(amount)
+        : parseUnits(amount, 18);
+
+      const tokenIn = isBuyMode ? WETH_ADDRESS : TOKEN_ADDRESS;
+      const tokenOut = isBuyMode ? TOKEN_ADDRESS : WETH_ADDRESS;
+
+      const { createPublicClient, http } = await import('viem');
+      const client = createPublicClient({ chain: base, transport: http('https://mainnet.base.org') });
+
+      const result = await client.simulateContract({
+        address: UNISWAP_V3_QUOTER,
+        abi: QUOTER_ABI,
+        functionName: 'quoteExactInputSingle',
+        args: [{
+          tokenIn,
+          tokenOut,
+          amountIn,
+          fee: POOL_FEE,
+          sqrtPriceLimitX96: BigInt(0),
+        }],
+      });
+
+      const amountOut = result.result[0];
+      const formatted = formatUnits(amountOut, 18);
+      setOutputAmount(formatted);
     } catch (error) {
       console.error('Quote error:', error);
       setOutputAmount('');
+      toast.error('Could not fetch quote. The pool may lack liquidity for this amount.');
     } finally {
       setIsQuoting(false);
     }
@@ -273,11 +293,14 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
         ? parseEther(inputAmount)
         : parseUnits(inputAmount, 18);
       
-      // Use 0 as minOut to avoid reverts from inaccurate estimates
-      // The slippage protection comes from the user seeing the quote first
-      const minOut = BigInt(0);
+      // Apply slippage to the quoted output amount
+      let minOut = BigInt(0);
+      if (outputAmount) {
+        const quotedOut = parseUnits(outputAmount, 18);
+        minOut = quotedOut * BigInt(100 - slippage) / BigInt(100);
+      }
 
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800); // 30 minutes
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800);
 
       if (isBuyMode) {
         // ETH -> Token: Use exactInputSingle with ETH value
