@@ -160,7 +160,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
   
   // ETH balance
   const { data: ethBalance } = useBalance({
-    address,
+    address: activeAddress,
   });
 
   // Token balance
