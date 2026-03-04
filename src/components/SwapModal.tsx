@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeftRight, ArrowDownUp, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
-import { useAccount, useBalance, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
+import { useAccount, useBalance, useWriteContract, useWaitForTransactionReceipt, useReadContract, useSimulateContract } from 'wagmi';
 import { parseEther, formatEther, parseUnits, formatUnits, encodeFunctionData } from 'viem';
+import { base } from 'wagmi/chains';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
