@@ -412,7 +412,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
         </SheetHeader>
 
         <div className="mt-6">
-          {!isConnected || !address ? (
+          {!isConnected && !activeAddress ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground font-body">
                 Please connect your wallet to trade
