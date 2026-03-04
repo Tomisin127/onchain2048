@@ -144,7 +144,7 @@ interface SwapModalProps {
   onSwapSuccess?: () => void;
 }
 
-export function SwapModal({ onSwapSuccess }: SwapModalProps) {
+export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isBuyMode, setIsBuyMode] = useState(true); // true = ETH -> Token, false = Token -> ETH
   const [inputAmount, setInputAmount] = useState('');
@@ -153,11 +153,14 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
   const [needsApproval, setNeedsApproval] = useState(false);
   const [slippage, setSlippage] = useState(5); // 5% default slippage
 
-  const { address, isConnected } = useAccount();
+  const { address: wagmiAddress, isConnected } = useAccount();
+  
+  // Use the passed walletAddress (which includes Privy embedded wallet) or fall back to wagmi
+  const activeAddress = (walletAddress || wagmiAddress) as `0x${string}` | undefined;
   
   // ETH balance
   const { data: ethBalance } = useBalance({
-    address,
+    address: activeAddress,
   });
 
   // Token balance
@@ -165,7 +168,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
     address: TOKEN_ADDRESS,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
-    args: address ? [address] : undefined,
+    args: activeAddress ? [activeAddress] : undefined,
   });
 
   // Token allowance
@@ -173,7 +176,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
     address: TOKEN_ADDRESS,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, UNISWAP_V3_ROUTER] : undefined,
+    args: activeAddress ? [activeAddress, UNISWAP_V3_ROUTER] : undefined,
   });
 
   // Approve transaction
@@ -273,20 +276,20 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
   }, [inputAmount, getQuote]);
 
   const handleApprove = () => {
-    if (!address) return;
+    if (!activeAddress) return;
     
     approve({
       address: TOKEN_ADDRESS,
       abi: ERC20_ABI,
       functionName: 'approve',
       args: [UNISWAP_V3_ROUTER, parseUnits('1000000000', 18)],
-      account: address,
+      account: activeAddress,
       chain: base,
     });
   };
 
   const handleSwap = () => {
-    if (!address || !inputAmount) return;
+    if (!activeAddress || !inputAmount) return;
 
     try {
       const amountIn = isBuyMode 
@@ -311,7 +314,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
             tokenIn: WETH_ADDRESS,
             tokenOut: TOKEN_ADDRESS,
             fee: POOL_FEE,
-            recipient: address,
+            recipient: activeAddress,
             amountIn: amountIn,
             amountOutMinimum: minOut,
             sqrtPriceLimitX96: BigInt(0),
@@ -324,7 +327,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
           functionName: 'multicall',
           args: [deadline, [swapData]],
           value: amountIn,
-          account: address,
+          account: activeAddress,
           chain: base,
         });
       } else {
@@ -346,7 +349,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
         const unwrapData = encodeFunctionData({
           abi: SWAP_ROUTER_ABI,
           functionName: 'unwrapWETH9',
-          args: [minOut, address],
+          args: [minOut, activeAddress],
         });
 
         swap({
@@ -354,7 +357,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
           abi: SWAP_ROUTER_ABI,
           functionName: 'multicall',
           args: [deadline, [swapData, unwrapData]],
-          account: address,
+          account: activeAddress,
           chain: base,
         });
       }
@@ -409,7 +412,7 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
         </SheetHeader>
 
         <div className="mt-6">
-          {!isConnected || !address ? (
+          {!isConnected && !activeAddress ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground font-body">
                 Please connect your wallet to trade

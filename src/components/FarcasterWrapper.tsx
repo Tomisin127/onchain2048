@@ -2,6 +2,7 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 
 const FarcasterToastManager = lazy(() => import('./FarcasterToastManager'))
 const FarcasterManifestSigner = lazy(() => import('./FarcasterManifestSigner'))
+const MiniAppPrompt = lazy(() => import('./MiniAppPrompt'))
 
 interface FarcasterWrapperProps {
   children: React.ReactNode
@@ -23,10 +24,11 @@ export default function FarcasterWrapper({ children }: FarcasterWrapperProps): J
       <FarcasterToastManager>
         {({ onManifestSuccess, onManifestError }) => (
           <>
-            <FarcasterManifestSigner 
+          <FarcasterManifestSigner 
               onSuccess={onManifestSuccess}
               onError={onManifestError}
             />
+            <MiniAppPrompt />
             {children}
           </>
         )}
