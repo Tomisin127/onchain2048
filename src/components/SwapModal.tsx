@@ -168,7 +168,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
     address: TOKEN_ADDRESS,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
-    args: address ? [address] : undefined,
+    args: activeAddress ? [activeAddress] : undefined,
   });
 
   // Token allowance
