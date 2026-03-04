@@ -276,7 +276,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
   }, [inputAmount, getQuote]);
 
   const handleApprove = () => {
-    if (!address) return;
+    if (!activeAddress) return;
     
     approve({
       address: TOKEN_ADDRESS,
