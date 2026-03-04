@@ -327,7 +327,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
           functionName: 'multicall',
           args: [deadline, [swapData]],
           value: amountIn,
-          account: address,
+          account: activeAddress,
           chain: base,
         });
       } else {
