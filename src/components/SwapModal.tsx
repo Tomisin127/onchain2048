@@ -349,7 +349,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
         const unwrapData = encodeFunctionData({
           abi: SWAP_ROUTER_ABI,
           functionName: 'unwrapWETH9',
-          args: [minOut, address],
+          args: [minOut, activeAddress],
         });
 
         swap({
