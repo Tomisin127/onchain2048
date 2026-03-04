@@ -283,7 +283,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
       abi: ERC20_ABI,
       functionName: 'approve',
       args: [UNISWAP_V3_ROUTER, parseUnits('1000000000', 18)],
-      account: address,
+      account: activeAddress,
       chain: base,
     });
   };
