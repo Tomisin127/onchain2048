@@ -176,7 +176,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
     address: TOKEN_ADDRESS,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, UNISWAP_V3_ROUTER] : undefined,
+    args: activeAddress ? [activeAddress, UNISWAP_V3_ROUTER] : undefined,
   });
 
   // Approve transaction
