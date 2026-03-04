@@ -24,10 +24,11 @@ export default function FarcasterWrapper({ children }: FarcasterWrapperProps): J
       <FarcasterToastManager>
         {({ onManifestSuccess, onManifestError }) => (
           <>
-            <FarcasterManifestSigner 
+          <FarcasterManifestSigner 
               onSuccess={onManifestSuccess}
               onError={onManifestError}
             />
+            <MiniAppPrompt />
             {children}
           </>
         )}
