@@ -357,7 +357,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
           abi: SWAP_ROUTER_ABI,
           functionName: 'multicall',
           args: [deadline, [swapData, unwrapData]],
-          account: address,
+          account: activeAddress,
           chain: base,
         });
       }
