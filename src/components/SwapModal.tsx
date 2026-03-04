@@ -314,7 +314,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
             tokenIn: WETH_ADDRESS,
             tokenOut: TOKEN_ADDRESS,
             fee: POOL_FEE,
-            recipient: address,
+            recipient: activeAddress,
             amountIn: amountIn,
             amountOutMinimum: minOut,
             sqrtPriceLimitX96: BigInt(0),
