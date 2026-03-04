@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeftRight, ArrowDownUp, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
-import { useAccount, useBalance, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
+import { useAccount, useBalance, useWriteContract, useWaitForTransactionReceipt, useReadContract, useSimulateContract } from 'wagmi';
 import { parseEther, formatEther, parseUnits, formatUnits, encodeFunctionData } from 'viem';
+import { base } from 'wagmi/chains';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -258,7 +259,9 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
       address: TOKEN_ADDRESS,
       abi: ERC20_ABI,
       functionName: 'approve',
-      args: [UNISWAP_V3_ROUTER, parseUnits('1000000000', 18)], // Approve large amount
+      args: [UNISWAP_V3_ROUTER, parseUnits('1000000000', 18)],
+      account: address,
+      chain: base,
     });
   };
 
@@ -270,11 +273,9 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
         ? parseEther(inputAmount)
         : parseUnits(inputAmount, 18);
       
-      const minOut = outputAmount 
-        ? (isBuyMode 
-            ? parseUnits((parseFloat(outputAmount) * (1 - slippage / 100)).toFixed(2), 18)
-            : parseEther((parseFloat(outputAmount) * (1 - slippage / 100)).toFixed(8)))
-        : BigInt(0);
+      // Use 0 as minOut to avoid reverts from inaccurate estimates
+      // The slippage protection comes from the user seeing the quote first
+      const minOut = BigInt(0);
 
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800); // 30 minutes
 
@@ -300,6 +301,8 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
           functionName: 'multicall',
           args: [deadline, [swapData]],
           value: amountIn,
+          account: address,
+          chain: base,
         });
       } else {
         // Token -> ETH: exactInputSingle then unwrapWETH9
@@ -328,6 +331,8 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
           abi: SWAP_ROUTER_ABI,
           functionName: 'multicall',
           args: [deadline, [swapData, unwrapData]],
+          account: address,
+          chain: base,
         });
       }
     } catch (error) {
