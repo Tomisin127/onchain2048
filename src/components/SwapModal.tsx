@@ -144,7 +144,7 @@ interface SwapModalProps {
   onSwapSuccess?: () => void;
 }
 
-export function SwapModal({ onSwapSuccess }: SwapModalProps) {
+export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isBuyMode, setIsBuyMode] = useState(true); // true = ETH -> Token, false = Token -> ETH
   const [inputAmount, setInputAmount] = useState('');
@@ -153,7 +153,10 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
   const [needsApproval, setNeedsApproval] = useState(false);
   const [slippage, setSlippage] = useState(5); // 5% default slippage
 
-  const { address, isConnected } = useAccount();
+  const { address: wagmiAddress, isConnected } = useAccount();
+  
+  // Use the passed walletAddress (which includes Privy embedded wallet) or fall back to wagmi
+  const activeAddress = (walletAddress || wagmiAddress) as `0x${string}` | undefined;
   
   // ETH balance
   const { data: ethBalance } = useBalance({
