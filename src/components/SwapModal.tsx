@@ -293,11 +293,14 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
         ? parseEther(inputAmount)
         : parseUnits(inputAmount, 18);
       
-      // Use 0 as minOut to avoid reverts from inaccurate estimates
-      // The slippage protection comes from the user seeing the quote first
-      const minOut = BigInt(0);
+      // Apply slippage to the quoted output amount
+      let minOut = BigInt(0);
+      if (outputAmount) {
+        const quotedOut = parseUnits(outputAmount, 18);
+        minOut = quotedOut * BigInt(100 - slippage) / BigInt(100);
+      }
 
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800); // 30 minutes
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800);
 
       if (isBuyMode) {
         // ETH -> Token: Use exactInputSingle with ETH value
