@@ -259,7 +259,9 @@ export function SwapModal({ onSwapSuccess }: SwapModalProps) {
       address: TOKEN_ADDRESS,
       abi: ERC20_ABI,
       functionName: 'approve',
-      args: [UNISWAP_V3_ROUTER, parseUnits('1000000000', 18)], // Approve large amount
+      args: [UNISWAP_V3_ROUTER, parseUnits('1000000000', 18)],
+      account: address,
+      chain: base,
     });
   };
 
