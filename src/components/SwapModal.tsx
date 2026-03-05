@@ -159,12 +159,12 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
   const activeAddress = (walletAddress || wagmiAddress) as `0x${string}` | undefined;
   
   // ETH balance
-  const { data: ethBalance } = useBalance({
+  const { data: ethBalance, refetch: refetchEthBalance } = useBalance({
     address: activeAddress,
   });
 
   // Token balance
-  const { data: tokenBalance } = useReadContract({
+  const { data: tokenBalance, refetch: refetchTokenBalance } = useReadContract({
     address: TOKEN_ADDRESS,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
