@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { sdk } from '@farcaster/miniapp-sdk'
+import { supabase } from '@/integrations/supabase/client'
 
 interface NotificationDetails {
   url: string
@@ -9,41 +10,73 @@ interface NotificationDetails {
 export default function MiniAppPrompt(): JSX.Element | null {
   const [hasPrompted, setHasPrompted] = useState(false)
 
+  const saveNotificationToken = useCallback(async (details: NotificationDetails) => {
+    try {
+      const { error } = await supabase
+        .from('miniapp_notifications')
+        .upsert(
+          {
+            notification_token: details.token,
+            notification_url: details.url,
+          },
+          { onConflict: 'notification_token' }
+        )
+      if (error) {
+        console.warn('Failed to save notification token:', error)
+      } else {
+        console.log('✅ Notification token saved to database')
+      }
+    } catch (err) {
+      console.warn('Error saving notification token:', err)
+    }
+  }, [])
+
+  const updateLastPlayed = useCallback(async () => {
+    const token = localStorage.getItem('miniapp_notification_token')
+    if (!token) return
+
+    try {
+      await supabase
+        .from('miniapp_notifications')
+        .update({ last_played_at: new Date().toISOString() })
+        .eq('notification_token', token)
+    } catch (err) {
+      console.warn('Error updating last played:', err)
+    }
+  }, [])
+
   const promptAddMiniApp = useCallback(async () => {
     if (hasPrompted) return
 
     try {
-      // Check if we're inside a mini app context
       const isInMiniApp = await sdk.isInMiniApp()
       if (!isInMiniApp) {
         console.log('Not in mini app context, skipping addMiniApp prompt')
         return
       }
 
-      // Signal that the app is ready to display
       await sdk.actions.ready()
       console.log('✅ sdk.actions.ready() called')
 
-      // Small delay to let the app render before prompting
+      // Update last played timestamp
+      await updateLastPlayed()
+
       await new Promise(resolve => setTimeout(resolve, 1000))
 
-      // Prompt user to add the mini app (favorites + notifications)
       setHasPrompted(true)
       const response = await sdk.actions.addMiniApp()
       
       console.log('✅ addMiniApp response:', response)
 
-      // Store notification details if provided
       if (response && typeof response === 'object' && 'notificationDetails' in response) {
         const details = (response as any).notificationDetails as NotificationDetails
         if (details?.token && details?.url) {
           localStorage.setItem('miniapp_notification_token', details.token)
           localStorage.setItem('miniapp_notification_url', details.url)
-          console.log('✅ Notification details saved:', { url: details.url })
+          await saveNotificationToken(details)
         }
       }
     } catch (error: any) {
-      // User rejected or not supported — that's fine
       const msg = error?.message || String(error)
       if (msg.includes('rejected') || msg.includes('Rejected')) {
         console.log('User declined to add mini app')
@@ -51,7 +84,7 @@ export default function MiniAppPrompt(): JSX.Element | null {
         console.warn('addMiniApp error:', error)
       }
     }
-  }, [hasPrompted])
+  }, [hasPrompted, saveNotificationToken, updateLastPlayed])
 
   useEffect(() => {
     promptAddMiniApp()
