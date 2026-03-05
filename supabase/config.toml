@@ -1,0 +1,4 @@
+project_id = "hazwgypingwpnaqblgiu"
+
+[functions.send-play-reminder]
+verify_jwt = false
