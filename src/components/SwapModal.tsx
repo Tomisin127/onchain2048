@@ -219,9 +219,13 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
       toast.success('Swap completed successfully!');
       setInputAmount('');
       setOutputAmount('');
+      // Refetch balances after swap
+      refetchEthBalance();
+      refetchTokenBalance();
+      refetchAllowance();
       onSwapSuccess?.();
     }
-  }, [isSwapSuccess, onSwapSuccess]);
+  }, [isSwapSuccess, onSwapSuccess, refetchEthBalance, refetchTokenBalance, refetchAllowance]);
 
   // Get real on-chain quote from Uniswap V3 Quoter
   const getQuote = useCallback(async (amount: string) => {
