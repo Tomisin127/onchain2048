@@ -7,9 +7,9 @@
   "miniapp": {
     "version": "1",
     "name": "Crypto2048",
-    "iconUrl": "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/46cf11d6-e4e4-4562-ae65-b00786967424/id-preview-884c9030--a1974d8a-aa9b-4d7b-b106-349acd6f719a.lovable.app-1771867541432.png",
-    "homeUrl": "https://2048onchain-smoky.vercel.app",
-    "splashImageUrl": "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/46cf11d6-e4e4-4562-ae65-b00786967424/id-preview-884c9030--a1974d8a-aa9b-4d7b-b106-349acd6f719a.lovable.app-1771867541432.png",
+    "iconUrl": "https://onchain2048.lovable.app/images/game-logo.png",
+    "homeUrl": "https://onchain2048.lovable.app",
+    "splashImageUrl": "https://onchain2048.lovable.app/images/game-logo.png",
     "splashBackgroundColor": "#1a1a2e",
     "subtitle": "On-Chain 2048 Game",
     "description": "Play 2048 on-chain with every move as a blockchain transaction on Base. Email login, Privy wallets, spend permissions.",
@@ -19,7 +19,9 @@
     "requiredCapabilities": [
       "actions.ready",
       "actions.signIn",
+      "actions.addMiniApp",
       "wallet.getEthereumProvider"
-    ]
+    ],
+    "webhookUrl": "https://onchain2048.lovable.app/api/webhook"
   }
 }
