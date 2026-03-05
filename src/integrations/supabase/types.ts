@@ -14,7 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      miniapp_notifications: {
+        Row: {
+          created_at: string
+          fid: string | null
+          id: string
+          last_played_at: string | null
+          notification_token: string
+          notification_url: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          fid?: string | null
+          id?: string
+          last_played_at?: string | null
+          notification_token: string
+          notification_url: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          fid?: string | null
+          id?: string
+          last_played_at?: string | null
+          notification_token?: string
+          notification_url?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
