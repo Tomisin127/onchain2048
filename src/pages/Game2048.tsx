@@ -29,6 +29,7 @@ export default function Game2048Page() {
     provider: baseProvider,
     universalAddress,
     subAccountAddress,
+    requestSpendPermission,
   } = useBaseSubAccount();
 
   const {
@@ -60,6 +61,24 @@ export default function Game2048Page() {
       if (embedded) setEmbeddedWalletAddress(embedded.address);
     }
   }, [wallets]);
+
+  // Request spend permissions when Base wallet connects with sub account
+  useEffect(() => {
+    if (isBaseConnected && subAccountAddress && subAccountAddress !== universalAddress) {
+      console.log('[v0] Base wallet with sub account detected, requesting spend permissions...');
+      const requestPermissions = async () => {
+        try {
+          const allowance = ethers.parseEther('10'); // 10 ETH limit per day
+          await requestSpendPermission(allowance);
+          console.log('[v0] ✅ Spend permissions granted successfully');
+        } catch (error) {
+          console.warn('[v0] Spend permission request failed (will use fallback):', error);
+          // Fallback: transactions will still work, just require approval each time
+        }
+      };
+      requestPermissions();
+    }
+  }, [isBaseConnected, subAccountAddress, universalAddress, requestSpendPermission]);
 
   // Fetch ETH price
   useEffect(() => {

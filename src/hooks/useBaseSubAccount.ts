@@ -167,21 +167,44 @@ export function useBaseSubAccount() {
       if (!subAddr) {
         try {
           console.log('[v0] Creating new sub account...');
-          const newSub = (await provider.request({
-            method: 'wallet_addSubAccount',
-            params: [
-              {
-                account: {
-                  type: 'create',
-                },
-              },
-            ],
-          })) as WalletAddSubAccountResponse;
           
-          subAddr = newSub.address;
-          console.log('[v0] Sub Account created:', subAddr);
+          // Use SDK's createSubAccount if available
+          let newSub: WalletAddSubAccountResponse | undefined;
+          
+          if (sdkRef.current?.createSubAccount) {
+            console.log('[v0] Using SDK createSubAccount utility...');
+            try {
+              newSub = await sdkRef.current.createSubAccount();
+              console.log('[v0] Sub Account created via SDK utility:', newSub?.address);
+            } catch (sdkError) {
+              console.warn('[v0] SDK createSubAccount failed, trying direct RPC:', sdkError);
+            }
+          }
+          
+          // Fallback: try direct RPC with basic account type
+          if (!newSub) {
+            console.log('[v0] Trying direct RPC wallet_addSubAccount...');
+            newSub = (await provider.request({
+              method: 'wallet_addSubAccount',
+              params: [
+                {
+                  account: {
+                    type: 'create',
+                  },
+                },
+              ],
+            })) as WalletAddSubAccountResponse;
+          }
+          
+          if (newSub?.address) {
+            subAddr = newSub.address;
+            console.log('[v0] Sub Account created:', subAddr);
+          } else {
+            throw new Error('Sub account creation returned no address');
+          }
         } catch (e) {
           console.warn('[v0] wallet_addSubAccount failed, using primary address as fallback:', e);
+          console.log('[v0] Error details:', e instanceof Error ? e.message : String(e));
           setError(`Sub Account creation not supported. Transactions will require manual approval each time.`);
           // Use primary address as fallback - transactions will require approval each time
           subAddr = primaryAddr;
@@ -207,6 +230,45 @@ export function useBaseSubAccount() {
     setSubAccountAddress('');
     setError('');
   }, []);
+
+  // Request spend permission for the sub account
+  // This should be called once to enable auto-spending for subsequent transactions
+  const requestSpendPermission = useCallback(
+    async (allowanceWei: bigint = BigInt(1000000000000000000)) => {
+      // 1 ETH default allowance
+      if (!provider || !subAccountAddress) {
+        throw new Error('Not connected to sub account');
+      }
+
+      try {
+        console.log('[v0] Requesting spend permission for sub account...');
+        
+        // Try using SDK utility if available
+        if (sdkRef.current?.requestSpendPermission) {
+          console.log('[v0] Using SDK requestSpendPermission...');
+          const permission = await sdkRef.current.requestSpendPermission({
+            account: subAccountAddress,
+            spender: CREATOR_ADDRESS,
+            token: '0x0000000000000000000000000000000000000000', // Native token
+            chainId: base.id,
+            allowance: allowanceWei,
+            periodInDays: 30,
+            provider,
+          });
+          
+          console.log('[v0] ✅ Spend permission granted:', permission);
+          return permission;
+        } else {
+          console.warn('[v0] SDK requestSpendPermission not available');
+          return null;
+        }
+      } catch (error) {
+        console.warn('[v0] Spend permission request failed:', error);
+        throw error;
+      }
+    },
+    [provider, subAccountAddress]
+  );
 
   // Send transaction from the sub account
   // First tx shows approval popup (Auto Spend Permission), subsequent ones are silent
@@ -267,5 +329,6 @@ export function useBaseSubAccount() {
     connect,
     disconnect,
     sendTransaction,
+    requestSpendPermission,
   };
 }
