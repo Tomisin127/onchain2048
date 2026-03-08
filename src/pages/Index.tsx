@@ -1,4 +1,6 @@
+import { Navigate } from 'react-router-dom';
+
 const Index = () => {
-  return null;
+  return <Navigate to="/game" replace />;
 };
 export default Index;
