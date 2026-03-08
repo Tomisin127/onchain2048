@@ -330,51 +330,80 @@ export function useBaseSubAccount() {
     [provider, subAccountAddress, universalAddress]
   );
 
-  // Send transaction from the sub account
-  // First tx shows approval popup (Auto Spend Permission), subsequent ones are silent
+  // Send transaction from the sub account or primary account
   const sendTransaction = useCallback(
     async (valueWei: bigint): Promise<string> => {
       if (!provider) {
         throw new Error('Provider not initialized');
       }
       
-      if (!subAccountAddress) {
-        throw new Error('Sub account not connected');
+      const fromAddr = subAccountAddress || universalAddress;
+      if (!fromAddr) {
+        throw new Error('No account connected');
       }
 
       const hexValue = `0x${valueWei.toString(16)}`;
       const hexChainId = `0x${base.id.toString(16)}`;
 
-      console.log('[v0] Sending transaction from sub account:', {
-        from: subAccountAddress,
+      console.log('[v0] Sending transaction:', {
+        from: fromAddr,
         to: CREATOR_ADDRESS,
         value: hexValue,
         chainId: hexChainId,
+        providerSource,
       });
 
-      const callsId = (await provider.request({
-        method: 'wallet_sendCalls',
-        params: [
-          {
-            version: '2.0',
-            atomicRequired: true,
-            chainId: hexChainId,
-            from: subAccountAddress,
-            calls: [
+      // Try wallet_sendCalls first (Base SDK / sub-account flow)
+      if (subAccountAddress && subAccountAddress !== universalAddress) {
+        try {
+          const callsId = (await provider.request({
+            method: 'wallet_sendCalls',
+            params: [
               {
-                to: CREATOR_ADDRESS,
-                data: '0x',
-                value: hexValue,
+                version: '2.0',
+                atomicRequired: true,
+                chainId: hexChainId,
+                from: subAccountAddress,
+                calls: [
+                  {
+                    to: CREATOR_ADDRESS,
+                    data: '0x',
+                    value: hexValue,
+                  },
+                ],
               },
             ],
-          },
-        ],
-      })) as string;
+          })) as string;
 
-      console.log('[v0] ✅ Sub Account tx sent:', callsId);
-      return callsId;
+          console.log('[v0] ✅ wallet_sendCalls tx sent:', callsId);
+          return callsId;
+        } catch (e) {
+          console.warn('[v0] wallet_sendCalls failed, falling back to eth_sendTransaction:', e);
+        }
+      }
+
+      // Fallback: standard eth_sendTransaction (works with Farcaster provider and most wallets)
+      try {
+        const txHash = (await provider.request({
+          method: 'eth_sendTransaction',
+          params: [
+            {
+              from: fromAddr,
+              to: CREATOR_ADDRESS,
+              value: hexValue,
+              data: '0x',
+            },
+          ],
+        })) as string;
+
+        console.log('[v0] ✅ eth_sendTransaction tx sent:', txHash);
+        return txHash;
+      } catch (e) {
+        console.error('[v0] eth_sendTransaction also failed:', e);
+        throw e;
+      }
     },
-    [provider, subAccountAddress]
+    [provider, subAccountAddress, universalAddress, providerSource]
   );
 
   return {
