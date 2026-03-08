@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createPublicClient, createWalletClient, http, parseAbi } from "npm:viem@2.38.6";
+import { createPublicClient, createWalletClient, http, parseAbi, encodeFunctionData, toHex } from "npm:viem@2.38.6";
 import { privateKeyToAccount } from "npm:viem@2.38.6/accounts";
 import { base } from "npm:viem@2.38.6/chains";
 
@@ -10,6 +10,28 @@ const corsHeaders = {
 };
 
 const SPEND_PERMISSION_MANAGER = "0xf85210B21cC50302F477BA56686d2019dC9b67Ad";
+
+// ERC-8021 attribution suffix for builder code: bc_dh0rqw67
+// Format: <builder_code_utf8> <num_codes:uint8> <magic_suffix:0x5765623344>
+function buildErc8021Suffix(codes: string[]): string {
+  // Each code is: length (1 byte) + utf8 bytes
+  let hex = "";
+  for (const code of codes) {
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(code);
+    hex += bytes.length.toString(16).padStart(2, "0");
+    for (const b of bytes) {
+      hex += b.toString(16).padStart(2, "0");
+    }
+  }
+  // Number of codes (1 byte)
+  hex += codes.length.toString(16).padStart(2, "0");
+  // Magic suffix "Web3D" = 0x5765623344
+  hex += "5765623344";
+  return hex;
+}
+
+const ERC_8021_SUFFIX = buildErc8021Suffix(["bc_dh0rqw67"]);
 
 const spendPermissionManagerAbi = parseAbi([
   "function approveWithSignature((address account, address spender, address token, uint160 allowance, uint48 period, uint48 start, uint48 end, uint256 salt, bytes extraData) permission, bytes signature) external",
@@ -32,7 +54,6 @@ serve(async (req: Request) => {
 
   const account = privateKeyToAccount(spenderPrivateKey as `0x${string}`);
 
-  // GET = return the relayer's public address so frontend can use it as `spender`
   if (req.method === "GET") {
     return new Response(
       JSON.stringify({ spenderAddress: account.address }),
@@ -53,7 +74,6 @@ serve(async (req: Request) => {
 
     console.log("[relay] Processing spend for account:", permission.account, "amount:", amount);
 
-    // Verify the permission's spender matches this relayer
     if (permission.spender.toLowerCase() !== account.address.toLowerCase()) {
       return new Response(
         JSON.stringify({ error: `Spender mismatch: permission has ${permission.spender}, relayer is ${account.address}` }),
@@ -100,11 +120,24 @@ serve(async (req: Request) => {
 
     if (!isApproved) {
       console.log("[relay] Permission not yet approved, submitting approveWithSignature...");
-      const approveHash = await walletClient.writeContract({
-        address: SPEND_PERMISSION_MANAGER,
+      
+      // Encode approve calldata + ERC-8021 suffix
+      const approveData = encodeFunctionData({
         abi: spendPermissionManagerAbi,
         functionName: "approveWithSignature",
         args: [permissionTuple, signature as `0x${string}`],
+      });
+      const approveDataWithAttribution = (approveData + ERC_8021_SUFFIX) as `0x${string}`;
+      
+      console.log("[relay] approveWithSignature calldata with ERC-8021 attribution appended");
+      
+      // Get current nonce
+      const approveNonce = await publicClient.getTransactionCount({ address: account.address });
+      
+      const approveHash = await walletClient.sendTransaction({
+        to: SPEND_PERMISSION_MANAGER,
+        data: approveDataWithAttribution,
+        nonce: approveNonce,
       });
       console.log("[relay] approveWithSignature tx:", approveHash);
       txHashes.push(approveHash);
@@ -114,14 +147,24 @@ serve(async (req: Request) => {
     }
 
     console.log("[relay] Submitting spend call for amount:", amount);
-    const spendHash = await walletClient.writeContract({
-      address: SPEND_PERMISSION_MANAGER,
+    
+    // Encode spend calldata + ERC-8021 suffix
+    const spendData = encodeFunctionData({
       abi: spendPermissionManagerAbi,
       functionName: "spend",
-      args: [
-        permissionTuple,
-        BigInt(amount),
-      ],
+      args: [permissionTuple, BigInt(amount)],
+    });
+    const spendDataWithAttribution = (spendData + ERC_8021_SUFFIX) as `0x${string}`;
+    
+    console.log("[relay] spend calldata with ERC-8021 attribution appended");
+    
+    // Get current nonce to avoid nonce-too-low errors
+    const spendNonce = await publicClient.getTransactionCount({ address: account.address });
+    
+    const spendHash = await walletClient.sendTransaction({
+      to: SPEND_PERMISSION_MANAGER,
+      data: spendDataWithAttribution,
+      nonce: spendNonce,
     });
     console.log("[relay] ✅ spend tx:", spendHash);
     txHashes.push(spendHash);
