@@ -315,9 +315,10 @@ export default function Game2048Page() {
     );
   }
 
-  const connectionType = authenticated ? 'Privy Email' : 'Base Wallet (Sub Account)';
-  const userDisplay = user?.email?.address || (baseAddress ? `${baseAddress.slice(0, 6)}...${baseAddress.slice(-4)}` : 'Connected');
   const walletAddr = embeddedWalletAddress || baseAddress || '';
+  const { displayName: baseDisplayName } = useBaseName(walletAddr);
+  const connectionType = authenticated ? 'Privy Email' : 'Base Wallet';
+  const userDisplay = user?.email?.address || baseDisplayName || 'Connected';
 
   const handleDisconnect = () => {
     if (authenticated) logout();
