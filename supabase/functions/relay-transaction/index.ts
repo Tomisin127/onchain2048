@@ -10,7 +10,7 @@ const corsHeaders = {
 };
 
 // SpendPermissionManager on Base mainnet
-const SPEND_PERMISSION_MANAGER = "0xf85210B21cBe22aa85e8203C7B407073C7530070";
+const SPEND_PERMISSION_MANAGER = "0xf85210B21cC50302F477BA56686d2019dC9b67Ad";
 
 const spendPermissionManagerAbi = parseAbi([
   "function approveWithSignature(((address account, address spender, address token, uint160 allowance, uint48 period, uint48 start, uint48 end, uint256 salt, bytes extraData) permission, bytes signature)) external",
