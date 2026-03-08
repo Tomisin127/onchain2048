@@ -204,9 +204,9 @@ export function useBaseSubAccount() {
           }
         } catch (e) {
           console.warn('[v0] wallet_addSubAccount failed, using primary address as fallback:', e);
-          console.log('[v0] Error details:', e instanceof Error ? e.message : String(e));
-          setError(`Sub Account creation not supported. Transactions will require manual approval each time.`);
+
           // Use primary address as fallback - transactions will require approval each time
+          // This is normal for non-Base-app wallets, not an error
           subAddr = primaryAddr;
         }
       }
