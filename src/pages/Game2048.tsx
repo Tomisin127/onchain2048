@@ -29,10 +29,6 @@ export default function Game2048Page() {
     isConnecting: isBaseConnecting,
     error: baseWalletError,
     sendTransaction: baseSendTx,
-    provider: baseProvider,
-    universalAddress,
-    subAccountAddress,
-    requestSpendPermission,
   } = useBaseSubAccount();
 
   const {
