@@ -22,23 +22,60 @@ export function useBaseSubAccount() {
   const [isConnecting, setIsConnecting] = useState(false);
   const sdkRef = useRef<ReturnType<typeof createBaseAccountSDK> | null>(null);
 
-  // Initialize SDK once
+  // Initialize SDK once - try multiple provider sources
   useEffect(() => {
-    try {
-      const sdk = createBaseAccountSDK({
-        appName: '2048 On-Chain',
-        appLogoUrl: `${window.location.origin}/images/game-logo.png`,
-        appChainIds: [base.id],
-        subAccounts: {
-          creation: 'on-connect',
-          defaultAccount: 'sub',
-        },
-      });
-      sdkRef.current = sdk;
-      setProvider(sdk.getProvider());
-    } catch (error) {
-      console.error('Base Account SDK init failed:', error);
-    }
+    const initProvider = async () => {
+      // 1. Try Base Account SDK first
+      try {
+        const sdk = createBaseAccountSDK({
+          appName: '2048 On-Chain',
+          appLogoUrl: `${window.location.origin}/images/game-logo.png`,
+          appChainIds: [base.id],
+          subAccounts: {
+            creation: 'on-connect',
+            defaultAccount: 'sub',
+          },
+        });
+        sdkRef.current = sdk;
+        const sdkProvider = sdk.getProvider();
+        if (sdkProvider) {
+          console.log('✅ Provider from Base Account SDK');
+          setProvider(sdkProvider);
+          return;
+        }
+      } catch (error) {
+        console.warn('Base Account SDK getProvider failed:', error);
+      }
+
+      // 2. Try Farcaster miniapp SDK provider (for miniapp context inside Base app)
+      try {
+        const { sdk: farcasterSdk } = await import('@farcaster/miniapp-sdk');
+        const ethProvider = farcasterSdk.wallet.ethProvider;
+        if (ethProvider) {
+          console.log('✅ Provider from Farcaster miniapp SDK');
+          setProvider(ethProvider);
+          return;
+        }
+      } catch (error) {
+        console.warn('Farcaster miniapp provider not available:', error);
+      }
+
+      // 3. Fallback to window.ethereum (standard injected provider)
+      try {
+        const win = window as any;
+        if (win.ethereum) {
+          console.log('✅ Provider from window.ethereum');
+          setProvider(win.ethereum);
+          return;
+        }
+      } catch (error) {
+        console.warn('window.ethereum not available:', error);
+      }
+
+      console.warn('No wallet provider found - Base Wallet connection unavailable');
+    };
+
+    initProvider();
   }, []);
 
   const connect = useCallback(async () => {
