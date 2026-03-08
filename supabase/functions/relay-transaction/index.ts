@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createPublicClient, createWalletClient, http, encodeFunctionData, parseAbi } from "npm:viem@2.38.6";
+import { createPublicClient, createWalletClient, http, parseAbi } from "npm:viem@2.38.6";
 import { privateKeyToAccount } from "npm:viem@2.38.6/accounts";
 import { base } from "npm:viem@2.38.6/chains";
 
@@ -9,7 +9,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// SpendPermissionManager on Base mainnet
 const SPEND_PERMISSION_MANAGER = "0xf85210B21cC50302F477BA56686d2019dC9b67Ad";
 
 const spendPermissionManagerAbi = parseAbi([
@@ -23,15 +22,25 @@ serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    const spenderPrivateKey = Deno.env.get("SPENDER_PRIVATE_KEY");
-    if (!spenderPrivateKey) {
-      return new Response(
-        JSON.stringify({ error: "Spender wallet not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+  const spenderPrivateKey = Deno.env.get("SPENDER_PRIVATE_KEY");
+  if (!spenderPrivateKey) {
+    return new Response(
+      JSON.stringify({ error: "Spender wallet not configured" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
 
+  const account = privateKeyToAccount(spenderPrivateKey as `0x${string}`);
+
+  // GET = return the relayer's public address so frontend can use it as `spender`
+  if (req.method === "GET") {
+    return new Response(
+      JSON.stringify({ spenderAddress: account.address }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  try {
     const body = await req.json();
     const { permission, signature, amount } = body;
 
@@ -44,8 +53,14 @@ serve(async (req: Request) => {
 
     console.log("[relay] Processing spend for account:", permission.account, "amount:", amount);
 
-    const account = privateKeyToAccount(spenderPrivateKey as `0x${string}`);
-    
+    // Verify the permission's spender matches this relayer
+    if (permission.spender.toLowerCase() !== account.address.toLowerCase()) {
+      return new Response(
+        JSON.stringify({ error: `Spender mismatch: permission has ${permission.spender}, relayer is ${account.address}` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const publicClient = createPublicClient({
       chain: base,
       transport: http("https://mainnet.base.org"),
@@ -57,7 +72,6 @@ serve(async (req: Request) => {
       transport: http("https://mainnet.base.org"),
     });
 
-    // Check if permission is already approved on-chain
     const permissionTuple = {
       account: permission.account as `0x${string}`,
       spender: permission.spender as `0x${string}`,
@@ -84,7 +98,6 @@ serve(async (req: Request) => {
 
     const txHashes: string[] = [];
 
-    // If not approved yet, submit approveWithSignature first
     if (!isApproved) {
       console.log("[relay] Permission not yet approved, submitting approveWithSignature...");
       const approveHash = await walletClient.writeContract({
@@ -96,12 +109,10 @@ serve(async (req: Request) => {
       console.log("[relay] approveWithSignature tx:", approveHash);
       txHashes.push(approveHash);
 
-      // Wait for approval tx to confirm
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
       console.log("[relay] approveWithSignature confirmed");
     }
 
-    // Submit spend call
     console.log("[relay] Submitting spend call for amount:", amount);
     const spendHash = await walletClient.writeContract({
       address: SPEND_PERMISSION_MANAGER,

@@ -3,8 +3,6 @@ import { base } from 'viem/chains';
 import { sdk as farcasterSdk } from '@farcaster/miniapp-sdk';
 import { supabase } from '@/integrations/supabase/client';
 
-const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
-
 // EIP-712 typed data for SpendPermission
 const SPEND_PERMISSION_TYPES = {
   SpendPermission: [
@@ -44,6 +42,7 @@ export function useBaseSubAccount() {
   const [error, setError] = useState<string>('');
   const [spendPermission, setSpendPermission] = useState<SpendPermission | null>(null);
   const [spendSignature, setSpendSignature] = useState<string>('');
+  const [relayerAddress, setRelayerAddress] = useState<string>('');
   const initAttempted = useRef(false);
 
   // Initialize provider
@@ -55,7 +54,7 @@ export function useBaseSubAccount() {
       console.log('[v0] Starting wallet provider initialization...');
       setError('');
 
-      // 1. Farcaster miniapp SDK ethProvider (most reliable in Base app)
+      // 1. Farcaster miniapp SDK ethProvider
       try {
         const directFarcasterProvider = (farcasterSdk as any)?.wallet?.ethProvider;
         if (directFarcasterProvider && typeof directFarcasterProvider.request === 'function') {
@@ -104,6 +103,26 @@ export function useBaseSubAccount() {
     void initProvider();
   }, []);
 
+  // Fetch relayer address on mount
+  useEffect(() => {
+    const fetchRelayerAddress = async () => {
+      try {
+        const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction', {
+          method: 'GET',
+        });
+        if (data?.spenderAddress) {
+          console.log('[v0] Relayer spender address:', data.spenderAddress);
+          setRelayerAddress(data.spenderAddress);
+        } else {
+          console.warn('[v0] Could not fetch relayer address:', invokeError);
+        }
+      } catch (err) {
+        console.warn('[v0] Failed to fetch relayer address:', err);
+      }
+    };
+    void fetchRelayerAddress();
+  }, []);
+
   const connect = useCallback(async () => {
     let activeProvider = provider;
 
@@ -135,6 +154,10 @@ export function useBaseSubAccount() {
       throw new Error(errorMsg);
     }
 
+    if (!relayerAddress) {
+      console.warn('[v0] Relayer address not yet fetched, spend permissions may fail');
+    }
+
     setIsConnecting(true);
     setError('');
 
@@ -155,12 +178,19 @@ export function useBaseSubAccount() {
       setUniversalAddress(primaryAddr);
       setSubAccountAddress(primaryAddr);
 
-      // Now request Spend Permission (one-time popup)
-      console.log('[v0] Requesting spend permission signature...');
+      // Request Spend Permission — spender = relayer wallet address
+      const spenderAddr = relayerAddress;
+      if (!spenderAddr) {
+        console.warn('[v0] No relayer address available, skipping spend permission');
+        setConnected(true);
+        return;
+      }
+
+      console.log('[v0] Requesting spend permission for spender (relayer):', spenderAddr);
       const now = Math.floor(Date.now() / 1000);
       const permission: SpendPermission = {
         account: primaryAddr,
-        spender: CREATOR_ADDRESS,
+        spender: spenderAddr,
         token: '0x0000000000000000000000000000000000000000', // Native ETH
         allowance: '1000000000000000000', // 1 ETH
         period: 86400, // 1 day
@@ -171,7 +201,6 @@ export function useBaseSubAccount() {
       };
 
       try {
-        // EIP-712 domain for SpendPermissionManager on Base
         const domain = {
           name: 'Spend Permission Manager',
           version: '1',
@@ -205,7 +234,6 @@ export function useBaseSubAccount() {
         setSpendSignature(signature as string);
       } catch (signError) {
         console.warn('[v0] Spend permission signing failed (user may have rejected):', signError);
-        // Still connect, but transactions will use direct eth_sendTransaction as fallback
       }
 
       setConnected(true);
@@ -218,7 +246,7 @@ export function useBaseSubAccount() {
     } finally {
       setIsConnecting(false);
     }
-  }, [provider]);
+  }, [provider, relayerAddress]);
 
   const disconnect = useCallback(() => {
     setConnected(false);
@@ -229,10 +257,9 @@ export function useBaseSubAccount() {
     setError('');
   }, []);
 
-  // Send transaction - uses backend relayer if spend permission available, else direct tx
+  // Send transaction via backend relayer (silent), fallback to direct tx (popup)
   const sendTransaction = useCallback(
     async (valueWei: bigint): Promise<string> => {
-      // If we have a signed spend permission, use the backend relayer (silent!)
       if (spendPermission && spendSignature) {
         console.log('[v0] Using backend relayer for silent transaction...');
         try {
@@ -259,7 +286,6 @@ export function useBaseSubAccount() {
           return txHash;
         } catch (relayError) {
           console.warn('[v0] Relayer failed, falling back to direct tx:', relayError);
-          // Fall through to direct transaction
         }
       }
 
@@ -271,6 +297,7 @@ export function useBaseSubAccount() {
       const hexValue = `0x${valueWei.toString(16)}`;
       console.log('[v0] Fallback: direct eth_sendTransaction (will show popup)');
 
+      const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
       const txHash = (await provider.request({
         method: 'eth_sendTransaction',
         params: [{ from: fromAddr, to: CREATOR_ADDRESS, value: hexValue, data: '0x' }],
@@ -282,7 +309,6 @@ export function useBaseSubAccount() {
     [provider, subAccountAddress, universalAddress, spendPermission, spendSignature]
   );
 
-  // No-op for backward compatibility
   const requestSpendPermission = useCallback(async () => null, []);
 
   return {
