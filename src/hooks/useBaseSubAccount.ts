@@ -192,14 +192,8 @@ export function useBaseSubAccount() {
       const permission: SpendPermission = {
         account: primaryAddr,
         spender: spenderAddr,
-        token: '0x0000000000000000000000000000000000000000', // Native ETH
+        token: NATIVE_TOKEN_ADDRESS,
         allowance: '1000000000000000000', // 1 ETH
-        period: 86400, // 1 day
-        start: now,
-        end: now + 30 * 86400, // 30 days
-        salt: '0x' + Math.floor(Math.random() * 1e18).toString(16).padStart(64, '0'),
-        extraData: '0x',
-      };
 
       try {
         const domain = {
