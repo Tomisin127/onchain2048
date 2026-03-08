@@ -12,6 +12,7 @@ import { SwapModal } from '@/components/SwapModal';
 import { useGameSounds } from '@/hooks/useGameSounds';
 import { use2048Game } from '@/hooks/use2048Game';
 import { Direction } from '@/types/game';
+import { useBaseName } from '@/hooks/useBaseName';
 
 const MOVE_COST_USD = 0.0001;
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249' as const;
