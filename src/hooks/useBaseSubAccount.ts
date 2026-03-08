@@ -259,56 +259,45 @@ export function useBaseSubAccount() {
     setError('');
   }, []);
 
-  // Send transaction via backend relayer (silent), fallback to direct tx (popup)
+  // Send transaction via backend relayer only (silent)
   const sendTransaction = useCallback(
     async (valueWei: bigint): Promise<string> => {
-      if (spendPermission && spendSignature) {
-        console.log('[v0] Using backend relayer for silent transaction...');
-        try {
-          const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction', {
-            body: {
-              permission: spendPermission,
-              signature: spendSignature,
-              amount: valueWei.toString(),
-            },
-          });
-
-          if (invokeError) {
-            console.error('[v0] Relayer invoke error:', invokeError);
-            throw new Error(invokeError.message || 'Relay failed');
-          }
-
-          if (data?.error) {
-            console.error('[v0] Relayer returned error:', data.error);
-            throw new Error(data.error);
-          }
-
-          const txHash = data?.txHashes?.[data.txHashes.length - 1] || '';
-          console.log('[v0] ✅ Silent transaction via relayer:', txHash);
-          return txHash;
-        } catch (relayError) {
-          console.warn('[v0] Relayer failed, falling back to direct tx:', relayError);
-        }
+      if (!spendPermission || !spendSignature) {
+        throw new Error('Silent mode is not active. Please reconnect and approve spend permission.');
       }
 
-      // Fallback: direct transaction (will show popup)
-      if (!provider) throw new Error('Provider not initialized');
-      const fromAddr = subAccountAddress || universalAddress;
-      if (!fromAddr) throw new Error('No account connected');
+      if (spendPermission.token.toLowerCase() === ZERO_ADDRESS) {
+        throw new Error('Outdated spend permission detected. Please disconnect and reconnect.');
+      }
 
-      const hexValue = `0x${valueWei.toString(16)}`;
-      console.log('[v0] Fallback: direct eth_sendTransaction (will show popup)');
+      console.log('[v0] Using backend relayer for silent transaction...');
+      const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction', {
+        body: {
+          permission: spendPermission,
+          signature: spendSignature,
+          amount: valueWei.toString(),
+        },
+      });
 
-      const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
-      const txHash = (await provider.request({
-        method: 'eth_sendTransaction',
-        params: [{ from: fromAddr, to: CREATOR_ADDRESS, value: hexValue, data: '0x' }],
-      })) as string;
+      if (invokeError) {
+        console.error('[v0] Relayer invoke error:', invokeError);
+        throw new Error(invokeError.message || 'Silent transaction relay failed');
+      }
 
-      console.log('[v0] ✅ Direct tx sent:', txHash);
+      if (data?.error) {
+        console.error('[v0] Relayer returned error:', data.error);
+        throw new Error(data.error);
+      }
+
+      const txHash = data?.txHashes?.[data.txHashes.length - 1] || '';
+      if (!txHash) {
+        throw new Error('Silent transaction sent but tx hash was missing');
+      }
+
+      console.log('[v0] ✅ Silent transaction via relayer:', txHash);
       return txHash;
     },
-    [provider, subAccountAddress, universalAddress, spendPermission, spendSignature]
+    [spendPermission, spendSignature]
   );
 
   const requestSpendPermission = useCallback(async () => null, []);
