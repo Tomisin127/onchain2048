@@ -313,7 +313,9 @@ export default function Game2048Page() {
     return (
       <LoginScreen
         onEmailLogin={login}
-        onBaseWalletConnect={baseConnect}
+        onBaseWalletConnect={async (params?: SpendPermissionValues) => {
+          await baseConnect(params ? { allowanceEth: params.allowanceEth, durationDays: params.durationDays } : undefined);
+        }}
         isBaseConnecting={isBaseConnecting}
         baseWalletError={baseWalletError}
       />
