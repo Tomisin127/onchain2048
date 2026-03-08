@@ -19,6 +19,8 @@ const SPEND_PERMISSION_TYPES = {
 } as const;
 
 const SPEND_PERMISSION_MANAGER = '0xf85210B21cC50302F477BA56686d2019dC9b67Ad';
+const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 interface SpendPermission {
   account: string;
@@ -155,7 +157,9 @@ export function useBaseSubAccount() {
     }
 
     if (!relayerAddress) {
-      console.warn('[v0] Relayer address not yet fetched, spend permissions may fail');
+      const errorMsg = 'Silent transaction relayer unavailable. Please try again in a moment.';
+      setError(errorMsg);
+      throw new Error(errorMsg);
     }
 
     setIsConnecting(true);
@@ -177,21 +181,18 @@ export function useBaseSubAccount() {
       console.log('[v0] Primary address:', primaryAddr);
       setUniversalAddress(primaryAddr);
       setSubAccountAddress(primaryAddr);
+      setSpendPermission(null);
+      setSpendSignature('');
 
       // Request Spend Permission — spender = relayer wallet address
       const spenderAddr = relayerAddress;
-      if (!spenderAddr) {
-        console.warn('[v0] No relayer address available, skipping spend permission');
-        setConnected(true);
-        return;
-      }
 
       console.log('[v0] Requesting spend permission for spender (relayer):', spenderAddr);
       const now = Math.floor(Date.now() / 1000);
       const permission: SpendPermission = {
         account: primaryAddr,
         spender: spenderAddr,
-        token: '0x0000000000000000000000000000000000000000', // Native ETH
+        token: NATIVE_TOKEN_ADDRESS,
         allowance: '1000000000000000000', // 1 ETH
         period: 86400, // 1 day
         start: now,
@@ -233,7 +234,8 @@ export function useBaseSubAccount() {
         setSpendPermission(permission);
         setSpendSignature(signature as string);
       } catch (signError) {
-        console.warn('[v0] Spend permission signing failed (user may have rejected):', signError);
+        console.warn('[v0] Spend permission signing failed:', signError);
+        throw new Error('Spend permission signature was not completed. Please approve to enable silent moves.');
       }
 
       setConnected(true);
@@ -257,56 +259,45 @@ export function useBaseSubAccount() {
     setError('');
   }, []);
 
-  // Send transaction via backend relayer (silent), fallback to direct tx (popup)
+  // Send transaction via backend relayer only (silent)
   const sendTransaction = useCallback(
     async (valueWei: bigint): Promise<string> => {
-      if (spendPermission && spendSignature) {
-        console.log('[v0] Using backend relayer for silent transaction...');
-        try {
-          const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction', {
-            body: {
-              permission: spendPermission,
-              signature: spendSignature,
-              amount: valueWei.toString(),
-            },
-          });
-
-          if (invokeError) {
-            console.error('[v0] Relayer invoke error:', invokeError);
-            throw new Error(invokeError.message || 'Relay failed');
-          }
-
-          if (data?.error) {
-            console.error('[v0] Relayer returned error:', data.error);
-            throw new Error(data.error);
-          }
-
-          const txHash = data?.txHashes?.[data.txHashes.length - 1] || '';
-          console.log('[v0] ✅ Silent transaction via relayer:', txHash);
-          return txHash;
-        } catch (relayError) {
-          console.warn('[v0] Relayer failed, falling back to direct tx:', relayError);
-        }
+      if (!spendPermission || !spendSignature) {
+        throw new Error('Silent mode is not active. Please reconnect and approve spend permission.');
       }
 
-      // Fallback: direct transaction (will show popup)
-      if (!provider) throw new Error('Provider not initialized');
-      const fromAddr = subAccountAddress || universalAddress;
-      if (!fromAddr) throw new Error('No account connected');
+      if (spendPermission.token.toLowerCase() === ZERO_ADDRESS) {
+        throw new Error('Outdated spend permission detected. Please disconnect and reconnect.');
+      }
 
-      const hexValue = `0x${valueWei.toString(16)}`;
-      console.log('[v0] Fallback: direct eth_sendTransaction (will show popup)');
+      console.log('[v0] Using backend relayer for silent transaction...');
+      const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction', {
+        body: {
+          permission: spendPermission,
+          signature: spendSignature,
+          amount: valueWei.toString(),
+        },
+      });
 
-      const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
-      const txHash = (await provider.request({
-        method: 'eth_sendTransaction',
-        params: [{ from: fromAddr, to: CREATOR_ADDRESS, value: hexValue, data: '0x' }],
-      })) as string;
+      if (invokeError) {
+        console.error('[v0] Relayer invoke error:', invokeError);
+        throw new Error(invokeError.message || 'Silent transaction relay failed');
+      }
 
-      console.log('[v0] ✅ Direct tx sent:', txHash);
+      if (data?.error) {
+        console.error('[v0] Relayer returned error:', data.error);
+        throw new Error(data.error);
+      }
+
+      const txHash = data?.txHashes?.[data.txHashes.length - 1] || '';
+      if (!txHash) {
+        throw new Error('Silent transaction sent but tx hash was missing');
+      }
+
+      console.log('[v0] ✅ Silent transaction via relayer:', txHash);
       return txHash;
     },
-    [provider, subAccountAddress, universalAddress, spendPermission, spendSignature]
+    [spendPermission, spendSignature]
   );
 
   const requestSpendPermission = useCallback(async () => null, []);
