@@ -38,14 +38,28 @@ export function useBaseSubAccount() {
 
     const initProvider = async () => {
       console.log('[v0] Starting wallet provider initialization...');
-      
-      // 1. Try Farcaster miniapp SDK ethProvider (primary for miniapp context)
+      setError('');
+
+      // 1. Try Farcaster miniapp SDK ethProvider directly (most reliable in Base app contexts)
+      try {
+        const directFarcasterProvider = (farcasterSdk as any)?.wallet?.ethProvider;
+        if (directFarcasterProvider && typeof directFarcasterProvider.request === 'function') {
+          console.log('✅ Provider from Farcaster miniapp SDK (direct wallet provider)');
+          setProvider(directFarcasterProvider);
+          setProviderSource('farcaster');
+          return;
+        }
+      } catch (error) {
+        console.warn('[v0] Direct Farcaster provider check failed:', error);
+      }
+
+      // 2. Try Farcaster miniapp check + provider (fallback path)
       try {
         const isInMiniApp = await farcasterSdk.isInMiniApp();
         console.log('[v0] Farcaster check:', isInMiniApp);
         if (isInMiniApp) {
-          const ethProvider = farcasterSdk.wallet.ethProvider;
-          if (ethProvider) {
+          const ethProvider = (farcasterSdk as any)?.wallet?.ethProvider;
+          if (ethProvider && typeof ethProvider.request === 'function') {
             console.log('✅ Provider from Farcaster miniapp SDK (miniapp context)');
             setProvider(ethProvider);
             setProviderSource('farcaster');
@@ -56,12 +70,12 @@ export function useBaseSubAccount() {
         console.warn('[v0] Farcaster miniapp provider not available:', error);
       }
 
-      // 2. Try Base Account SDK (for standalone web context)
+      // 3. Try Base Account SDK (for standalone web context)
       try {
         console.log('[v0] Attempting to load Base Account SDK...');
         const { createBaseAccountSDK } = await import('@base-org/account');
         console.log('[v0] Base Account SDK imported successfully');
-        
+
         const sdk = createBaseAccountSDK({
           appName: '2048 On-Chain',
           appLogoUrl: `${window.location.origin}/images/game-logo.png`,
@@ -71,29 +85,28 @@ export function useBaseSubAccount() {
             defaultAccount: 'sub',
           },
         });
-        
+
         sdkRef.current = sdk;
         console.log('[v0] SDK created, getting provider...');
-        
+
         const sdkProvider = sdk.getProvider();
-        if (sdkProvider) {
+        if (sdkProvider && typeof sdkProvider.request === 'function') {
           console.log('✅ Provider from Base Account SDK');
           console.log('[v0] Provider methods:', Object.keys(sdkProvider).slice(0, 5));
           setProvider(sdkProvider);
           setProviderSource('base-sdk');
           return;
-        } else {
-          console.warn('[v0] SDK getProvider() returned null/undefined');
         }
+
+        console.warn('[v0] SDK getProvider() returned null/undefined');
       } catch (error) {
         console.warn('[v0] Base Account SDK initialization failed:', error);
-        setError(`Base Account SDK error: ${error instanceof Error ? error.message : String(error)}`);
       }
 
-      // 3. Fallback to window.ethereum
+      // 4. Fallback to window.ethereum
       try {
         const win = window as any;
-        if (win.ethereum) {
+        if (win.ethereum && typeof win.ethereum.request === 'function') {
           console.log('✅ Provider from window.ethereum');
           setProvider(win.ethereum);
           setProviderSource('injected');
@@ -107,7 +120,7 @@ export function useBaseSubAccount() {
       setError('No wallet provider detected. Please install the Base app or a Web3 wallet extension.');
     };
 
-    initProvider();
+    void initProvider();
   }, []);
 
   const connect = useCallback(async () => {
