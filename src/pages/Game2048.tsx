@@ -29,10 +29,6 @@ export default function Game2048Page() {
     isConnecting: isBaseConnecting,
     error: baseWalletError,
     sendTransaction: baseSendTx,
-    provider: baseProvider,
-    universalAddress,
-    subAccountAddress,
-    requestSpendPermission,
   } = useBaseSubAccount();
 
   const {
@@ -65,27 +61,7 @@ export default function Game2048Page() {
     }
   }, [wallets]);
 
-  // Request spend permissions when Base wallet connects with sub account
-  useEffect(() => {
-    if (isBaseConnected && subAccountAddress && subAccountAddress !== universalAddress) {
-      console.log('[v0] Base wallet with sub account detected, requesting spend permissions...');
-      const requestPermissions = async () => {
-        try {
-          const allowance = ethers.parseEther('10'); // 10 ETH limit per day
-          const permission = await requestSpendPermission(allowance);
-          if (permission) {
-            console.log('[v0] ✅ Spend permissions granted successfully');
-          } else {
-            console.info('[v0] Spend permission not required/supported for current provider');
-          }
-        } catch (error) {
-          console.warn('[v0] Spend permission request failed (will use fallback):', error);
-          // Fallback: transactions will still work, just require approval each time
-        }
-      };
-      requestPermissions();
-    }
-  }, [isBaseConnected, subAccountAddress, universalAddress, requestSpendPermission]);
+  // Spend permissions are now handled during connect in useBaseSubAccount
 
   // Fetch ETH price
   useEffect(() => {
@@ -240,14 +216,13 @@ export default function Game2048Page() {
         checkMilestones();
         setOptimisticMovesUsed(prev => prev + 1);
 
-        // Fire-and-forget silent transaction via Sub Account
+        // Fire-and-forget silent transaction via relayer or direct
         void (async () => {
           try {
-            console.log('[v0] Attempting Sub Account transaction...', {
-              from: subAccountAddress,
+            console.log('[v0] Attempting transaction...', {
+              from: baseAddress,
               to: CREATOR_ADDRESS,
               value: moveCostWei.toString(),
-              provider: baseProvider ? 'available' : 'missing',
             });
             const callsId = await baseSendTx(moveCostWei);
             if (callsId) {

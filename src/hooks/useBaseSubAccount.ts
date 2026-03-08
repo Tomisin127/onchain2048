@@ -1,23 +1,37 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { base } from 'viem/chains';
 import { sdk as farcasterSdk } from '@farcaster/miniapp-sdk';
+import { supabase } from '@/integrations/supabase/client';
 
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
 
-interface SubAccount {
-  address: `0x${string}`;
-  factory?: `0x${string}`;
-  factoryData?: `0x${string}`;
-}
+// EIP-712 typed data for SpendPermission
+const SPEND_PERMISSION_TYPES = {
+  SpendPermission: [
+    { name: 'account', type: 'address' },
+    { name: 'spender', type: 'address' },
+    { name: 'token', type: 'address' },
+    { name: 'allowance', type: 'uint160' },
+    { name: 'period', type: 'uint48' },
+    { name: 'start', type: 'uint48' },
+    { name: 'end', type: 'uint48' },
+    { name: 'salt', type: 'uint256' },
+    { name: 'extraData', type: 'bytes' },
+  ],
+} as const;
 
-interface GetSubAccountsResponse {
-  subAccounts: SubAccount[];
-}
+const SPEND_PERMISSION_MANAGER = '0xf85210B21cC50302F477BA56686d2019dC9b67Ad';
 
-interface WalletAddSubAccountResponse {
-  address: `0x${string}`;
-  factory?: `0x${string}`;
-  factoryData?: `0x${string}`;
+interface SpendPermission {
+  account: string;
+  spender: string;
+  token: string;
+  allowance: string;
+  period: number;
+  start: number;
+  end: number;
+  salt: string;
+  extraData: string;
 }
 
 export function useBaseSubAccount() {
@@ -28,10 +42,11 @@ export function useBaseSubAccount() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [providerSource, setProviderSource] = useState<string>('none');
   const [error, setError] = useState<string>('');
+  const [spendPermission, setSpendPermission] = useState<SpendPermission | null>(null);
+  const [spendSignature, setSpendSignature] = useState<string>('');
   const initAttempted = useRef(false);
-  const sdkRef = useRef<any>(null);
 
-  // Initialize provider - try multiple sources in priority order
+  // Initialize provider
   useEffect(() => {
     if (initAttempted.current) return;
     initAttempted.current = true;
@@ -40,7 +55,7 @@ export function useBaseSubAccount() {
       console.log('[v0] Starting wallet provider initialization...');
       setError('');
 
-      // 1. Try Farcaster miniapp SDK ethProvider directly (most reliable in Base app contexts)
+      // 1. Farcaster miniapp SDK ethProvider (most reliable in Base app)
       try {
         const directFarcasterProvider = (farcasterSdk as any)?.wallet?.ethProvider;
         if (directFarcasterProvider && typeof directFarcasterProvider.request === 'function') {
@@ -49,14 +64,13 @@ export function useBaseSubAccount() {
           setProviderSource('farcaster');
           return;
         }
-      } catch (error) {
-        console.warn('[v0] Direct Farcaster provider check failed:', error);
+      } catch (err) {
+        console.warn('[v0] Direct Farcaster provider check failed:', err);
       }
 
-      // 2. Try Farcaster miniapp check + provider (fallback path)
+      // 2. Farcaster miniapp context check
       try {
         const isInMiniApp = await farcasterSdk.isInMiniApp();
-        console.log('[v0] Farcaster check:', isInMiniApp);
         if (isInMiniApp) {
           const ethProvider = (farcasterSdk as any)?.wallet?.ethProvider;
           if (ethProvider && typeof ethProvider.request === 'function') {
@@ -66,44 +80,11 @@ export function useBaseSubAccount() {
             return;
           }
         }
-      } catch (error) {
-        console.warn('[v0] Farcaster miniapp provider not available:', error);
+      } catch (err) {
+        console.warn('[v0] Farcaster miniapp provider not available:', err);
       }
 
-      // 3. Try Base Account SDK (for standalone web context)
-      try {
-        console.log('[v0] Attempting to load Base Account SDK...');
-        const { createBaseAccountSDK } = await import('@base-org/account');
-        console.log('[v0] Base Account SDK imported successfully');
-
-        const sdk = createBaseAccountSDK({
-          appName: '2048 On-Chain',
-          appLogoUrl: `${window.location.origin}/images/game-logo.png`,
-          appChainIds: [base.id],
-          subAccounts: {
-            creation: 'on-connect',
-            defaultAccount: 'sub',
-          },
-        });
-
-        sdkRef.current = sdk;
-        console.log('[v0] SDK created, getting provider...');
-
-        const sdkProvider = sdk.getProvider();
-        if (sdkProvider && typeof sdkProvider.request === 'function') {
-          console.log('✅ Provider from Base Account SDK');
-          console.log('[v0] Provider methods:', Object.keys(sdkProvider).slice(0, 5));
-          setProvider(sdkProvider);
-          setProviderSource('base-sdk');
-          return;
-        }
-
-        console.warn('[v0] SDK getProvider() returned null/undefined');
-      } catch (error) {
-        console.warn('[v0] Base Account SDK initialization failed:', error);
-      }
-
-      // 4. Fallback to window.ethereum
+      // 3. window.ethereum fallback
       try {
         const win = window as any;
         if (win.ethereum && typeof win.ethereum.request === 'function') {
@@ -112,12 +93,12 @@ export function useBaseSubAccount() {
           setProviderSource('injected');
           return;
         }
-      } catch (error) {
-        console.warn('[v0] window.ethereum not available:', error);
+      } catch (err) {
+        console.warn('[v0] window.ethereum not available:', err);
       }
 
       console.warn('⚠️ No wallet provider found');
-      setError('No wallet provider detected. Please install the Base app or a Web3 wallet extension.');
+      setError('No wallet provider detected. Please open this app in the Base app.');
     };
 
     void initProvider();
@@ -126,32 +107,17 @@ export function useBaseSubAccount() {
   const connect = useCallback(async () => {
     let activeProvider = provider;
 
+    // Retry provider detection if missing
     if (!activeProvider) {
       try {
-        const directFarcasterProvider = (farcasterSdk as any)?.wallet?.ethProvider;
-        if (directFarcasterProvider && typeof directFarcasterProvider.request === 'function') {
-          activeProvider = directFarcasterProvider;
-          setProvider(directFarcasterProvider);
+        const fp = (farcasterSdk as any)?.wallet?.ethProvider;
+        if (fp && typeof fp.request === 'function') {
+          activeProvider = fp;
+          setProvider(fp);
           setProviderSource('farcaster');
         }
-      } catch (fallbackError) {
-        console.warn('[v0] Farcaster fallback provider check failed:', fallbackError);
-      }
+      } catch {}
     }
-
-    if (!activeProvider && sdkRef.current?.getProvider) {
-      try {
-        const sdkProvider = sdkRef.current.getProvider();
-        if (sdkProvider && typeof sdkProvider.request === 'function') {
-          activeProvider = sdkProvider;
-          setProvider(sdkProvider);
-          setProviderSource('base-sdk');
-        }
-      } catch (fallbackError) {
-        console.warn('[v0] SDK fallback provider check failed:', fallbackError);
-      }
-    }
-
     if (!activeProvider) {
       try {
         const win = window as any;
@@ -160,14 +126,11 @@ export function useBaseSubAccount() {
           setProvider(win.ethereum);
           setProviderSource('injected');
         }
-      } catch (fallbackError) {
-        console.warn('[v0] Injected provider fallback check failed:', fallbackError);
-      }
+      } catch {}
     }
 
     if (!activeProvider) {
       const errorMsg = 'No wallet provider available. Please open this app inside the Base app.';
-      console.error(errorMsg);
       setError(errorMsg);
       throw new Error(errorMsg);
     }
@@ -178,233 +141,149 @@ export function useBaseSubAccount() {
     try {
       console.log('[v0] Starting connection...');
 
-      // Request accounts - triggers wallet connection
       const accounts = (await activeProvider.request({
         method: 'eth_requestAccounts',
         params: [],
       })) as string[];
-
-      console.log('[v0] Accounts returned:', accounts);
 
       if (!accounts || accounts.length === 0) {
         throw new Error('No accounts returned from wallet');
       }
 
       const primaryAddr = accounts[0];
-      console.log('[v0] Primary/Universal address:', primaryAddr);
+      console.log('[v0] Primary address:', primaryAddr);
       setUniversalAddress(primaryAddr);
+      setSubAccountAddress(primaryAddr);
 
-      // For Base Account SDK with sub accounts auto-create enabled,
-      // the sub account should be created automatically on connect
-      let subAddr = '';
+      // Now request Spend Permission (one-time popup)
+      console.log('[v0] Requesting spend permission signature...');
+      const now = Math.floor(Date.now() / 1000);
+      const permission: SpendPermission = {
+        account: primaryAddr,
+        spender: CREATOR_ADDRESS,
+        token: '0x0000000000000000000000000000000000000000', // Native ETH
+        allowance: '1000000000000000000', // 1 ETH
+        period: 86400, // 1 day
+        start: now,
+        end: now + 30 * 86400, // 30 days
+        salt: '0x' + Math.floor(Math.random() * 1e18).toString(16).padStart(64, '0'),
+        extraData: '0x',
+      };
 
       try {
-        console.log('[v0] Attempting to get existing sub accounts...');
-        // Check for existing sub account
-        const response = (await activeProvider.request({
-          method: 'wallet_getSubAccounts',
-          params: [{ account: primaryAddr, domain: window.location.origin }],
-        })) as GetSubAccountsResponse;
+        // EIP-712 domain for SpendPermissionManager on Base
+        const domain = {
+          name: 'Spend Permission Manager',
+          version: '1',
+          chainId: base.id,
+          verifyingContract: SPEND_PERMISSION_MANAGER,
+        };
 
-        const existing = response?.subAccounts?.[0];
-        if (existing) {
-          subAddr = existing.address;
-          console.log('[v0] Sub Account found:', subAddr);
-        } else {
-          console.log('[v0] No existing sub accounts found');
-        }
-      } catch (e) {
-        console.warn('[v0] wallet_getSubAccounts not supported or failed:', e);
+        const signature = await activeProvider.request({
+          method: 'eth_signTypedData_v4',
+          params: [
+            primaryAddr,
+            JSON.stringify({
+              types: {
+                EIP712Domain: [
+                  { name: 'name', type: 'string' },
+                  { name: 'version', type: 'string' },
+                  { name: 'chainId', type: 'uint256' },
+                  { name: 'verifyingContract', type: 'address' },
+                ],
+                ...SPEND_PERMISSION_TYPES,
+              },
+              primaryType: 'SpendPermission',
+              domain,
+              message: permission,
+            }),
+          ],
+        });
+
+        console.log('[v0] ✅ Spend permission signed!');
+        setSpendPermission(permission);
+        setSpendSignature(signature as string);
+      } catch (signError) {
+        console.warn('[v0] Spend permission signing failed (user may have rejected):', signError);
+        // Still connect, but transactions will use direct eth_sendTransaction as fallback
       }
 
-      // If no sub account exists, try to create one
-      if (!subAddr) {
-        try {
-          console.log('[v0] Creating new sub account...');
-
-          // Use SDK's createSubAccount if available
-          let newSub: WalletAddSubAccountResponse | undefined;
-
-          if (sdkRef.current?.createSubAccount) {
-            console.log('[v0] Using SDK createSubAccount utility...');
-            try {
-              newSub = await sdkRef.current.createSubAccount();
-              console.log('[v0] Sub Account created via SDK utility:', newSub?.address);
-            } catch (sdkError) {
-              console.warn('[v0] SDK createSubAccount failed, trying direct RPC:', sdkError);
-            }
-          }
-
-          // Fallback: try direct RPC with basic account type
-          if (!newSub) {
-            console.log('[v0] Trying direct RPC wallet_addSubAccount...');
-            newSub = (await activeProvider.request({
-              method: 'wallet_addSubAccount',
-              params: [
-                {
-                  account: {
-                    type: 'create',
-                  },
-                },
-              ],
-            })) as WalletAddSubAccountResponse;
-          }
-
-          if (newSub?.address) {
-            subAddr = newSub.address;
-            console.log('[v0] Sub Account created:', subAddr);
-          } else {
-            throw new Error('Sub account creation returned no address');
-          }
-        } catch (e) {
-          console.warn('[v0] wallet_addSubAccount failed, using primary address as fallback:', e);
-
-          // Use primary address as fallback - transactions will require approval each time
-          // This is normal for non-Base-app wallets, not an error
-          subAddr = primaryAddr;
-        }
-      }
-
-      setSubAccountAddress(subAddr);
       setConnected(true);
-      console.log('[v0] ✅ Connected! Universal:', primaryAddr, 'Sub:', subAddr, 'Provider Source:', providerSource);
-    } catch (error) {
-      const errorMsg = `Base Account connection failed: ${error instanceof Error ? error.message : String(error)}`;
+      console.log('[v0] ✅ Connected! Address:', primaryAddr);
+    } catch (err) {
+      const errorMsg = `Connection failed: ${err instanceof Error ? err.message : String(err)}`;
       console.error('[v0]', errorMsg);
       setError(errorMsg);
-      throw error;
+      throw err;
     } finally {
       setIsConnecting(false);
     }
-  }, [provider, providerSource]);
+  }, [provider]);
 
   const disconnect = useCallback(() => {
     setConnected(false);
     setUniversalAddress('');
     setSubAccountAddress('');
+    setSpendPermission(null);
+    setSpendSignature('');
     setError('');
   }, []);
 
-  // Request spend permission for the sub account
-  // This should be called once to enable auto-spending for subsequent transactions
-  const requestSpendPermission = useCallback(
-    async (allowanceWei: bigint = BigInt(1000000000000000000)) => {
-      // 1 ETH default allowance
-      if (!provider || !subAccountAddress) {
-        throw new Error('Not connected to sub account');
-      }
-
-      // If we're using the primary account fallback, permissions are not applicable.
-      if (subAccountAddress === universalAddress) {
-        console.info('[v0] Spend permission skipped: using primary account fallback');
-        return null;
-      }
-
-      try {
-        console.log('[v0] Requesting spend permission for sub account...');
-
-        // Try using SDK utility if available
-        if (sdkRef.current?.requestSpendPermission) {
-          console.log('[v0] Using SDK requestSpendPermission...');
-          const permission = await sdkRef.current.requestSpendPermission({
-            account: subAccountAddress,
-            spender: CREATOR_ADDRESS,
-            token: '0x0000000000000000000000000000000000000000', // Native token
-            chainId: base.id,
-            allowance: allowanceWei,
-            periodInDays: 30,
-            provider,
-          });
-
-          console.log('[v0] ✅ Spend permission granted:', permission);
-          return permission;
-        }
-
-        console.warn('[v0] SDK requestSpendPermission not available for this provider');
-        return null;
-      } catch (error) {
-        console.warn('[v0] Spend permission request failed:', error);
-        throw error;
-      }
-    },
-    [provider, subAccountAddress, universalAddress]
-  );
-
-  // Send transaction from the sub account or primary account
+  // Send transaction - uses backend relayer if spend permission available, else direct tx
   const sendTransaction = useCallback(
     async (valueWei: bigint): Promise<string> => {
-      if (!provider) {
-        throw new Error('Provider not initialized');
-      }
-      
-      const fromAddr = subAccountAddress || universalAddress;
-      if (!fromAddr) {
-        throw new Error('No account connected');
-      }
-
-      const hexValue = `0x${valueWei.toString(16)}`;
-      const hexChainId = `0x${base.id.toString(16)}`;
-
-      console.log('[v0] Sending transaction:', {
-        from: fromAddr,
-        to: CREATOR_ADDRESS,
-        value: hexValue,
-        chainId: hexChainId,
-        providerSource,
-      });
-
-      // Try wallet_sendCalls first (Base SDK / sub-account flow)
-      if (subAccountAddress && subAccountAddress !== universalAddress) {
+      // If we have a signed spend permission, use the backend relayer (silent!)
+      if (spendPermission && spendSignature) {
+        console.log('[v0] Using backend relayer for silent transaction...');
         try {
-          const callsId = (await provider.request({
-            method: 'wallet_sendCalls',
-            params: [
-              {
-                version: '2.0',
-                atomicRequired: true,
-                chainId: hexChainId,
-                from: subAccountAddress,
-                calls: [
-                  {
-                    to: CREATOR_ADDRESS,
-                    data: '0x',
-                    value: hexValue,
-                  },
-                ],
-              },
-            ],
-          })) as string;
+          const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction', {
+            body: {
+              permission: spendPermission,
+              signature: spendSignature,
+              amount: valueWei.toString(),
+            },
+          });
 
-          console.log('[v0] ✅ wallet_sendCalls tx sent:', callsId);
-          return callsId;
-        } catch (e) {
-          console.warn('[v0] wallet_sendCalls failed, falling back to eth_sendTransaction:', e);
+          if (invokeError) {
+            console.error('[v0] Relayer invoke error:', invokeError);
+            throw new Error(invokeError.message || 'Relay failed');
+          }
+
+          if (data?.error) {
+            console.error('[v0] Relayer returned error:', data.error);
+            throw new Error(data.error);
+          }
+
+          const txHash = data?.txHashes?.[data.txHashes.length - 1] || '';
+          console.log('[v0] ✅ Silent transaction via relayer:', txHash);
+          return txHash;
+        } catch (relayError) {
+          console.warn('[v0] Relayer failed, falling back to direct tx:', relayError);
+          // Fall through to direct transaction
         }
       }
 
-      // Fallback: standard eth_sendTransaction (works with Farcaster provider and most wallets)
-      try {
-        const txHash = (await provider.request({
-          method: 'eth_sendTransaction',
-          params: [
-            {
-              from: fromAddr,
-              to: CREATOR_ADDRESS,
-              value: hexValue,
-              data: '0x',
-            },
-          ],
-        })) as string;
+      // Fallback: direct transaction (will show popup)
+      if (!provider) throw new Error('Provider not initialized');
+      const fromAddr = subAccountAddress || universalAddress;
+      if (!fromAddr) throw new Error('No account connected');
 
-        console.log('[v0] ✅ eth_sendTransaction tx sent:', txHash);
-        return txHash;
-      } catch (e) {
-        console.error('[v0] eth_sendTransaction also failed:', e);
-        throw e;
-      }
+      const hexValue = `0x${valueWei.toString(16)}`;
+      console.log('[v0] Fallback: direct eth_sendTransaction (will show popup)');
+
+      const txHash = (await provider.request({
+        method: 'eth_sendTransaction',
+        params: [{ from: fromAddr, to: CREATOR_ADDRESS, value: hexValue, data: '0x' }],
+      })) as string;
+
+      console.log('[v0] ✅ Direct tx sent:', txHash);
+      return txHash;
     },
-    [provider, subAccountAddress, universalAddress, providerSource]
+    [provider, subAccountAddress, universalAddress, spendPermission, spendSignature]
   );
+
+  // No-op for backward compatibility
+  const requestSpendPermission = useCallback(async () => null, []);
 
   return {
     provider,
@@ -419,5 +298,6 @@ export function useBaseSubAccount() {
     disconnect,
     sendTransaction,
     requestSpendPermission,
+    hasSpendPermission: !!spendPermission && !!spendSignature,
   };
 }
