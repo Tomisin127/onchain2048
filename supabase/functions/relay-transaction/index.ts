@@ -26,8 +26,8 @@ function buildErc8021Suffix(codes: string[]): string {
   }
   // Number of codes (1 byte)
   hex += codes.length.toString(16).padStart(2, "0");
-  // Magic suffix "Web3D" = 0x5765623344
-  hex += "5765623344";
+  // Space separator (0x20) + Magic suffix "Web3D" = 0x5765623344
+  hex += "20" + "5765623344";
   return hex;
 }
 
