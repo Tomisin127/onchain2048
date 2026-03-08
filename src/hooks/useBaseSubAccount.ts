@@ -194,6 +194,12 @@ export function useBaseSubAccount() {
         spender: spenderAddr,
         token: NATIVE_TOKEN_ADDRESS,
         allowance: '1000000000000000000', // 1 ETH
+        period: 86400, // 1 day
+        start: now,
+        end: now + 30 * 86400, // 30 days
+        salt: '0x' + Math.floor(Math.random() * 1e18).toString(16).padStart(64, '0'),
+        extraData: '0x',
+      };
 
       try {
         const domain = {
@@ -228,7 +234,8 @@ export function useBaseSubAccount() {
         setSpendPermission(permission);
         setSpendSignature(signature as string);
       } catch (signError) {
-        console.warn('[v0] Spend permission signing failed (user may have rejected):', signError);
+        console.warn('[v0] Spend permission signing failed:', signError);
+        throw new Error('Spend permission signature was not completed. Please approve to enable silent moves.');
       }
 
       setConnected(true);
