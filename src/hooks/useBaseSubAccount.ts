@@ -200,8 +200,6 @@ export function useBaseSubAccount() {
       setSpendSignature('');
 
       // Request Spend Permission — spender = relayer wallet address
-      const spenderAddr = relayerAddress;
-
       console.log('[v0] Requesting spend permission for spender (relayer):', spenderAddr);
       const now = Math.floor(Date.now() / 1000);
       const permission: SpendPermission = {
