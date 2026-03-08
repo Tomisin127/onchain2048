@@ -104,7 +104,7 @@ serve(async (req: Request) => {
         address: SPEND_PERMISSION_MANAGER,
         abi: spendPermissionManagerAbi,
         functionName: "approveWithSignature",
-        args: [{ permission: permissionTuple, signature: signature as `0x${string}` }],
+        args: [permissionTuple, signature as `0x${string}`],
       });
       console.log("[relay] approveWithSignature tx:", approveHash);
       txHashes.push(approveHash);
