@@ -12,7 +12,7 @@ const corsHeaders = {
 const SPEND_PERMISSION_MANAGER = "0xf85210B21cC50302F477BA56686d2019dC9b67Ad";
 
 const spendPermissionManagerAbi = parseAbi([
-  "function approveWithSignature(((address account, address spender, address token, uint160 allowance, uint48 period, uint48 start, uint48 end, uint256 salt, bytes extraData) permission, bytes signature)) external",
+  "function approveWithSignature((address account, address spender, address token, uint160 allowance, uint48 period, uint48 start, uint48 end, uint256 salt, bytes extraData) permission, bytes signature) external",
   "function spend(address account, address token, uint160 amount) external",
   "function isApproved((address account, address spender, address token, uint160 allowance, uint48 period, uint48 start, uint48 end, uint256 salt, bytes extraData) permission) external view returns (bool)",
 ]);
@@ -104,7 +104,7 @@ serve(async (req: Request) => {
         address: SPEND_PERMISSION_MANAGER,
         abi: spendPermissionManagerAbi,
         functionName: "approveWithSignature",
-        args: [{ permission: permissionTuple, signature: signature as `0x${string}` }],
+        args: [permissionTuple, signature as `0x${string}`],
       });
       console.log("[relay] approveWithSignature tx:", approveHash);
       txHashes.push(approveHash);
