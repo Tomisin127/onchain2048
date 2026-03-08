@@ -72,8 +72,12 @@ export default function Game2048Page() {
       const requestPermissions = async () => {
         try {
           const allowance = ethers.parseEther('10'); // 10 ETH limit per day
-          await requestSpendPermission(allowance);
-          console.log('[v0] ✅ Spend permissions granted successfully');
+          const permission = await requestSpendPermission(allowance);
+          if (permission) {
+            console.log('[v0] ✅ Spend permissions granted successfully');
+          } else {
+            console.info('[v0] Spend permission not required/supported for current provider');
+          }
         } catch (error) {
           console.warn('[v0] Spend permission request failed (will use fallback):', error);
           // Fallback: transactions will still work, just require approval each time
