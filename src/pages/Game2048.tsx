@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
 import { useBaseSubAccount } from '@/hooks/useBaseSubAccount';
+import type { SpendPermissionValues } from '@/components/SpendPermissionConfig';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { GameBoard } from '@/components/GameBoard';
@@ -312,7 +313,9 @@ export default function Game2048Page() {
     return (
       <LoginScreen
         onEmailLogin={login}
-        onBaseWalletConnect={baseConnect}
+        onBaseWalletConnect={async (params?: SpendPermissionValues) => {
+          await baseConnect(params ? { allowanceEth: params.allowanceEth, durationDays: params.durationDays } : undefined);
+        }}
         isBaseConnecting={isBaseConnecting}
         baseWalletError={baseWalletError}
       />

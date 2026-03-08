@@ -1,12 +1,13 @@
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
+import { SpendPermissionConfig, SpendPermissionValues } from '@/components/SpendPermissionConfig';
 
 const MOVE_COST_USD = 0.0001;
 
 interface LoginScreenProps {
   onEmailLogin: () => void;
-  onBaseWalletConnect: () => Promise<void>;
+  onBaseWalletConnect: (params?: SpendPermissionValues) => Promise<void>;
   isBaseConnecting: boolean;
   baseWalletError?: string;
 }
@@ -18,11 +19,17 @@ export function LoginScreen({
   baseWalletError = '',
 }: LoginScreenProps) {
   const [connectionError, setConnectionError] = useState('');
+  const [showSpendConfig, setShowSpendConfig] = useState(false);
 
-  const handleBaseWallet = async () => {
+  const handleBaseWallet = () => {
+    setConnectionError('');
+    setShowSpendConfig(true);
+  };
+
+  const handleSpendConfirm = async (values: SpendPermissionValues) => {
     setConnectionError('');
     try {
-      await onBaseWalletConnect();
+      await onBaseWalletConnect(values);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error('[v0] Base wallet connection failed:', errorMsg);
@@ -31,6 +38,31 @@ export function LoginScreen({
   };
 
   const displayError = connectionError || baseWalletError;
+
+  if (showSpendConfig) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="max-w-md w-full space-y-4">
+          <div className="text-center space-y-1">
+            <h1 className="text-4xl font-display font-bold gradient-text">2048</h1>
+            <p className="text-muted-foreground text-xs font-body">Configure your spend permission</p>
+          </div>
+
+          {displayError && (
+            <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3">
+              <p className="text-xs text-destructive font-mono break-words">{displayError}</p>
+            </div>
+          )}
+
+          <SpendPermissionConfig
+            onConfirm={handleSpendConfirm}
+            onCancel={() => setShowSpendConfig(false)}
+            isConnecting={isBaseConnecting}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
