@@ -124,21 +124,62 @@ export function useBaseSubAccount() {
   }, []);
 
   const connect = useCallback(async () => {
-    if (!provider) {
+    let activeProvider = provider;
+
+    if (!activeProvider) {
+      try {
+        const directFarcasterProvider = (farcasterSdk as any)?.wallet?.ethProvider;
+        if (directFarcasterProvider && typeof directFarcasterProvider.request === 'function') {
+          activeProvider = directFarcasterProvider;
+          setProvider(directFarcasterProvider);
+          setProviderSource('farcaster');
+        }
+      } catch (fallbackError) {
+        console.warn('[v0] Farcaster fallback provider check failed:', fallbackError);
+      }
+    }
+
+    if (!activeProvider && sdkRef.current?.getProvider) {
+      try {
+        const sdkProvider = sdkRef.current.getProvider();
+        if (sdkProvider && typeof sdkProvider.request === 'function') {
+          activeProvider = sdkProvider;
+          setProvider(sdkProvider);
+          setProviderSource('base-sdk');
+        }
+      } catch (fallbackError) {
+        console.warn('[v0] SDK fallback provider check failed:', fallbackError);
+      }
+    }
+
+    if (!activeProvider) {
+      try {
+        const win = window as any;
+        if (win.ethereum && typeof win.ethereum.request === 'function') {
+          activeProvider = win.ethereum;
+          setProvider(win.ethereum);
+          setProviderSource('injected');
+        }
+      } catch (fallbackError) {
+        console.warn('[v0] Injected provider fallback check failed:', fallbackError);
+      }
+    }
+
+    if (!activeProvider) {
       const errorMsg = 'No wallet provider available. Please open this app inside the Base app.';
       console.error(errorMsg);
       setError(errorMsg);
       throw new Error(errorMsg);
     }
-    
+
     setIsConnecting(true);
     setError('');
 
     try {
       console.log('[v0] Starting connection...');
-      
+
       // Request accounts - triggers wallet connection
-      const accounts = (await provider.request({
+      const accounts = (await activeProvider.request({
         method: 'eth_requestAccounts',
         params: [],
       })) as string[];
@@ -156,11 +197,11 @@ export function useBaseSubAccount() {
       // For Base Account SDK with sub accounts auto-create enabled,
       // the sub account should be created automatically on connect
       let subAddr = '';
-      
+
       try {
         console.log('[v0] Attempting to get existing sub accounts...');
         // Check for existing sub account
-        const response = (await provider.request({
+        const response = (await activeProvider.request({
           method: 'wallet_getSubAccounts',
           params: [{ account: primaryAddr, domain: window.location.origin }],
         })) as GetSubAccountsResponse;
@@ -180,10 +221,10 @@ export function useBaseSubAccount() {
       if (!subAddr) {
         try {
           console.log('[v0] Creating new sub account...');
-          
+
           // Use SDK's createSubAccount if available
           let newSub: WalletAddSubAccountResponse | undefined;
-          
+
           if (sdkRef.current?.createSubAccount) {
             console.log('[v0] Using SDK createSubAccount utility...');
             try {
@@ -193,11 +234,11 @@ export function useBaseSubAccount() {
               console.warn('[v0] SDK createSubAccount failed, trying direct RPC:', sdkError);
             }
           }
-          
+
           // Fallback: try direct RPC with basic account type
           if (!newSub) {
             console.log('[v0] Trying direct RPC wallet_addSubAccount...');
-            newSub = (await provider.request({
+            newSub = (await activeProvider.request({
               method: 'wallet_addSubAccount',
               params: [
                 {
@@ -208,7 +249,7 @@ export function useBaseSubAccount() {
               ],
             })) as WalletAddSubAccountResponse;
           }
-          
+
           if (newSub?.address) {
             subAddr = newSub.address;
             console.log('[v0] Sub Account created:', subAddr);
