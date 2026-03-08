@@ -156,7 +156,22 @@ export function useBaseSubAccount() {
       throw new Error(errorMsg);
     }
 
-    if (!relayerAddress) {
+    // Fetch relayer address inline if not yet available
+    let spenderAddr = relayerAddress;
+    if (!spenderAddr) {
+      try {
+        const { data } = await supabase.functions.invoke('relay-transaction', { method: 'GET' });
+        if (data?.spenderAddress) {
+          spenderAddr = data.spenderAddress;
+          setRelayerAddress(spenderAddr);
+          console.log('[v0] Fetched relayer address inline:', spenderAddr);
+        }
+      } catch (err) {
+        console.warn('[v0] Inline relayer fetch failed:', err);
+      }
+    }
+
+    if (!spenderAddr) {
       const errorMsg = 'Silent transaction relayer unavailable. Please try again in a moment.';
       setError(errorMsg);
       throw new Error(errorMsg);
@@ -185,8 +200,6 @@ export function useBaseSubAccount() {
       setSpendSignature('');
 
       // Request Spend Permission — spender = relayer wallet address
-      const spenderAddr = relayerAddress;
-
       console.log('[v0] Requesting spend permission for spender (relayer):', spenderAddr);
       const now = Math.floor(Date.now() / 1000);
       const permission: SpendPermission = {
