@@ -1,6 +1,6 @@
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useConnect } from 'wagmi';
+import { useBaseSubAccount } from '@/hooks/useBaseSubAccount';
 
 const MOVE_COST_USD = 0.0001;
 
@@ -9,12 +9,13 @@ interface LoginScreenProps {
 }
 
 export function LoginScreen({ onEmailLogin }: LoginScreenProps) {
-  const { connectors, connect } = useConnect();
+  const { connect, isConnecting } = useBaseSubAccount();
 
-  const handleBaseWallet = () => {
-    const coinbaseConnector = connectors.find(c => c.name === 'Coinbase Wallet');
-    if (coinbaseConnector) {
-      connect({ connector: coinbaseConnector });
+  const handleBaseWallet = async () => {
+    try {
+      await connect();
+    } catch (error) {
+      console.error('Base wallet connection failed:', error);
     }
   };
 
@@ -59,10 +60,11 @@ export function LoginScreen({ onEmailLogin }: LoginScreenProps) {
             className="w-full bg-secondary text-secondary-foreground hover:bg-muted font-display"
             size="lg"
             variant="outline"
+            disabled={isConnecting}
           >
-            Connect Base Wallet
+            {isConnecting ? 'Connecting...' : 'Connect Base Wallet'}
           </Button>
-          <p className="text-xs text-muted-foreground">With spend permission approval</p>
+          <p className="text-xs text-muted-foreground">One-time approval, then seamless play</p>
         </div>
       </Card>
     </div>
