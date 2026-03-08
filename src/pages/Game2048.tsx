@@ -26,6 +26,9 @@ export default function Game2048Page() {
     activeAddress: baseAddress,
     disconnect: baseDisconnect,
     sendTransaction: baseSendTx,
+    provider: baseProvider,
+    universalAddress,
+    subAccountAddress,
   } = useBaseSubAccount();
 
   const {
@@ -214,13 +217,23 @@ export default function Game2048Page() {
         // Fire-and-forget silent transaction via Sub Account
         void (async () => {
           try {
+            console.log('[v0] Attempting Sub Account transaction...', {
+              from: subAccountAddress,
+              to: CREATOR_ADDRESS,
+              value: moveCostWei.toString(),
+              provider: baseProvider ? 'available' : 'missing',
+            });
             const callsId = await baseSendTx(moveCostWei);
             if (callsId) {
               setPendingTransactions(prev => [...prev, callsId]);
               console.log('✅ Sub Account tx sent:', callsId);
+            } else {
+              console.warn('[v0] Sub Account tx sent but no ID returned');
             }
           } catch (error) {
-            console.error('❌ Sub Account transaction failed:', error);
+            console.error('[v0] ❌ Sub Account transaction failed:', error);
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            console.error('[v0] Error details:', errorMsg);
             setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
           }
         })();
