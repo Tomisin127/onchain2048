@@ -119,8 +119,7 @@ serve(async (req: Request) => {
       abi: spendPermissionManagerAbi,
       functionName: "spend",
       args: [
-        permissionTuple.account,
-        permissionTuple.token,
+        permissionTuple,
         BigInt(amount),
       ],
     });
