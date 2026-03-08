@@ -1,6 +1,7 @@
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useBaseSubAccount } from '@/hooks/useBaseSubAccount';
+import { useState } from 'react';
 
 const MOVE_COST_USD = 0.0001;
 
@@ -9,15 +10,21 @@ interface LoginScreenProps {
 }
 
 export function LoginScreen({ onEmailLogin }: LoginScreenProps) {
-  const { connect, isConnecting } = useBaseSubAccount();
+  const { connect, isConnecting, error: walletError } = useBaseSubAccount();
+  const [connectionError, setConnectionError] = useState('');
 
   const handleBaseWallet = async () => {
+    setConnectionError('');
     try {
       await connect();
     } catch (error) {
-      console.error('Base wallet connection failed:', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error('[v0] Base wallet connection failed:', errorMsg);
+      setConnectionError(errorMsg);
     }
   };
+
+  const displayError = connectionError || walletError;
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -31,6 +38,12 @@ export function LoginScreen({ onEmailLogin }: LoginScreenProps) {
           Every move is a blockchain transaction on Base network
         </p>
         <p className="text-xs text-muted-foreground font-mono">Move cost: ${MOVE_COST_USD}</p>
+
+        {displayError && (
+          <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-left">
+            <p className="text-xs text-destructive font-mono break-words">{displayError}</p>
+          </div>
+        )}
 
         <div className="space-y-3 pt-2">
           <div className="font-medium text-secondary-foreground text-sm font-body">
