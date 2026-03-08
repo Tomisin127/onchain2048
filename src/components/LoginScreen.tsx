@@ -1,22 +1,28 @@
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useBaseSubAccount } from '@/hooks/useBaseSubAccount';
 import { useState } from 'react';
 
 const MOVE_COST_USD = 0.0001;
 
 interface LoginScreenProps {
   onEmailLogin: () => void;
+  onBaseWalletConnect: () => Promise<void>;
+  isBaseConnecting: boolean;
+  baseWalletError?: string;
 }
 
-export function LoginScreen({ onEmailLogin }: LoginScreenProps) {
-  const { connect, isConnecting, error: walletError } = useBaseSubAccount();
+export function LoginScreen({
+  onEmailLogin,
+  onBaseWalletConnect,
+  isBaseConnecting,
+  baseWalletError = '',
+}: LoginScreenProps) {
   const [connectionError, setConnectionError] = useState('');
 
   const handleBaseWallet = async () => {
     setConnectionError('');
     try {
-      await connect();
+      await onBaseWalletConnect();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error('[v0] Base wallet connection failed:', errorMsg);
@@ -24,7 +30,7 @@ export function LoginScreen({ onEmailLogin }: LoginScreenProps) {
     }
   };
 
-  const displayError = connectionError || walletError;
+  const displayError = connectionError || baseWalletError;
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -33,7 +39,7 @@ export function LoginScreen({ onEmailLogin }: LoginScreenProps) {
           <h1 className="text-5xl font-display font-bold gradient-text">2048</h1>
           <p className="text-muted-foreground text-sm font-body">On-Chain Edition</p>
         </div>
-        
+
         <p className="text-muted-foreground text-sm font-body">
           Every move is a blockchain transaction on Base network
         </p>
@@ -46,9 +52,7 @@ export function LoginScreen({ onEmailLogin }: LoginScreenProps) {
         )}
 
         <div className="space-y-3 pt-2">
-          <div className="font-medium text-secondary-foreground text-sm font-body">
-            Connect to Start
-          </div>
+          <div className="font-medium text-secondary-foreground text-sm font-body">Connect to Start</div>
 
           <Button
             onClick={onEmailLogin}
@@ -73,9 +77,9 @@ export function LoginScreen({ onEmailLogin }: LoginScreenProps) {
             className="w-full bg-secondary text-secondary-foreground hover:bg-muted font-display"
             size="lg"
             variant="outline"
-            disabled={isConnecting}
+            disabled={isBaseConnecting}
           >
-            {isConnecting ? 'Connecting...' : 'Connect Base Wallet'}
+            {isBaseConnecting ? 'Connecting...' : 'Connect Base Wallet'}
           </Button>
           <p className="text-xs text-muted-foreground">One-time approval, then seamless play</p>
         </div>

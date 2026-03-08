@@ -38,14 +38,28 @@ export function useBaseSubAccount() {
 
     const initProvider = async () => {
       console.log('[v0] Starting wallet provider initialization...');
-      
-      // 1. Try Farcaster miniapp SDK ethProvider (primary for miniapp context)
+      setError('');
+
+      // 1. Try Farcaster miniapp SDK ethProvider directly (most reliable in Base app contexts)
+      try {
+        const directFarcasterProvider = (farcasterSdk as any)?.wallet?.ethProvider;
+        if (directFarcasterProvider && typeof directFarcasterProvider.request === 'function') {
+          console.log('✅ Provider from Farcaster miniapp SDK (direct wallet provider)');
+          setProvider(directFarcasterProvider);
+          setProviderSource('farcaster');
+          return;
+        }
+      } catch (error) {
+        console.warn('[v0] Direct Farcaster provider check failed:', error);
+      }
+
+      // 2. Try Farcaster miniapp check + provider (fallback path)
       try {
         const isInMiniApp = await farcasterSdk.isInMiniApp();
         console.log('[v0] Farcaster check:', isInMiniApp);
         if (isInMiniApp) {
-          const ethProvider = farcasterSdk.wallet.ethProvider;
-          if (ethProvider) {
+          const ethProvider = (farcasterSdk as any)?.wallet?.ethProvider;
+          if (ethProvider && typeof ethProvider.request === 'function') {
             console.log('✅ Provider from Farcaster miniapp SDK (miniapp context)');
             setProvider(ethProvider);
             setProviderSource('farcaster');
@@ -56,12 +70,12 @@ export function useBaseSubAccount() {
         console.warn('[v0] Farcaster miniapp provider not available:', error);
       }
 
-      // 2. Try Base Account SDK (for standalone web context)
+      // 3. Try Base Account SDK (for standalone web context)
       try {
         console.log('[v0] Attempting to load Base Account SDK...');
         const { createBaseAccountSDK } = await import('@base-org/account');
         console.log('[v0] Base Account SDK imported successfully');
-        
+
         const sdk = createBaseAccountSDK({
           appName: '2048 On-Chain',
           appLogoUrl: `${window.location.origin}/images/game-logo.png`,
@@ -71,29 +85,28 @@ export function useBaseSubAccount() {
             defaultAccount: 'sub',
           },
         });
-        
+
         sdkRef.current = sdk;
         console.log('[v0] SDK created, getting provider...');
-        
+
         const sdkProvider = sdk.getProvider();
-        if (sdkProvider) {
+        if (sdkProvider && typeof sdkProvider.request === 'function') {
           console.log('✅ Provider from Base Account SDK');
           console.log('[v0] Provider methods:', Object.keys(sdkProvider).slice(0, 5));
           setProvider(sdkProvider);
           setProviderSource('base-sdk');
           return;
-        } else {
-          console.warn('[v0] SDK getProvider() returned null/undefined');
         }
+
+        console.warn('[v0] SDK getProvider() returned null/undefined');
       } catch (error) {
         console.warn('[v0] Base Account SDK initialization failed:', error);
-        setError(`Base Account SDK error: ${error instanceof Error ? error.message : String(error)}`);
       }
 
-      // 3. Fallback to window.ethereum
+      // 4. Fallback to window.ethereum
       try {
         const win = window as any;
-        if (win.ethereum) {
+        if (win.ethereum && typeof win.ethereum.request === 'function') {
           console.log('✅ Provider from window.ethereum');
           setProvider(win.ethereum);
           setProviderSource('injected');
@@ -107,25 +120,66 @@ export function useBaseSubAccount() {
       setError('No wallet provider detected. Please install the Base app or a Web3 wallet extension.');
     };
 
-    initProvider();
+    void initProvider();
   }, []);
 
   const connect = useCallback(async () => {
-    if (!provider) {
+    let activeProvider = provider;
+
+    if (!activeProvider) {
+      try {
+        const directFarcasterProvider = (farcasterSdk as any)?.wallet?.ethProvider;
+        if (directFarcasterProvider && typeof directFarcasterProvider.request === 'function') {
+          activeProvider = directFarcasterProvider;
+          setProvider(directFarcasterProvider);
+          setProviderSource('farcaster');
+        }
+      } catch (fallbackError) {
+        console.warn('[v0] Farcaster fallback provider check failed:', fallbackError);
+      }
+    }
+
+    if (!activeProvider && sdkRef.current?.getProvider) {
+      try {
+        const sdkProvider = sdkRef.current.getProvider();
+        if (sdkProvider && typeof sdkProvider.request === 'function') {
+          activeProvider = sdkProvider;
+          setProvider(sdkProvider);
+          setProviderSource('base-sdk');
+        }
+      } catch (fallbackError) {
+        console.warn('[v0] SDK fallback provider check failed:', fallbackError);
+      }
+    }
+
+    if (!activeProvider) {
+      try {
+        const win = window as any;
+        if (win.ethereum && typeof win.ethereum.request === 'function') {
+          activeProvider = win.ethereum;
+          setProvider(win.ethereum);
+          setProviderSource('injected');
+        }
+      } catch (fallbackError) {
+        console.warn('[v0] Injected provider fallback check failed:', fallbackError);
+      }
+    }
+
+    if (!activeProvider) {
       const errorMsg = 'No wallet provider available. Please open this app inside the Base app.';
       console.error(errorMsg);
       setError(errorMsg);
       throw new Error(errorMsg);
     }
-    
+
     setIsConnecting(true);
     setError('');
 
     try {
       console.log('[v0] Starting connection...');
-      
+
       // Request accounts - triggers wallet connection
-      const accounts = (await provider.request({
+      const accounts = (await activeProvider.request({
         method: 'eth_requestAccounts',
         params: [],
       })) as string[];
@@ -143,11 +197,11 @@ export function useBaseSubAccount() {
       // For Base Account SDK with sub accounts auto-create enabled,
       // the sub account should be created automatically on connect
       let subAddr = '';
-      
+
       try {
         console.log('[v0] Attempting to get existing sub accounts...');
         // Check for existing sub account
-        const response = (await provider.request({
+        const response = (await activeProvider.request({
           method: 'wallet_getSubAccounts',
           params: [{ account: primaryAddr, domain: window.location.origin }],
         })) as GetSubAccountsResponse;
@@ -167,10 +221,10 @@ export function useBaseSubAccount() {
       if (!subAddr) {
         try {
           console.log('[v0] Creating new sub account...');
-          
+
           // Use SDK's createSubAccount if available
           let newSub: WalletAddSubAccountResponse | undefined;
-          
+
           if (sdkRef.current?.createSubAccount) {
             console.log('[v0] Using SDK createSubAccount utility...');
             try {
@@ -180,11 +234,11 @@ export function useBaseSubAccount() {
               console.warn('[v0] SDK createSubAccount failed, trying direct RPC:', sdkError);
             }
           }
-          
+
           // Fallback: try direct RPC with basic account type
           if (!newSub) {
             console.log('[v0] Trying direct RPC wallet_addSubAccount...');
-            newSub = (await provider.request({
+            newSub = (await activeProvider.request({
               method: 'wallet_addSubAccount',
               params: [
                 {
@@ -195,7 +249,7 @@ export function useBaseSubAccount() {
               ],
             })) as WalletAddSubAccountResponse;
           }
-          
+
           if (newSub?.address) {
             subAddr = newSub.address;
             console.log('[v0] Sub Account created:', subAddr);
@@ -240,9 +294,15 @@ export function useBaseSubAccount() {
         throw new Error('Not connected to sub account');
       }
 
+      // If we're using the primary account fallback, permissions are not applicable.
+      if (subAccountAddress === universalAddress) {
+        console.info('[v0] Spend permission skipped: using primary account fallback');
+        return null;
+      }
+
       try {
         console.log('[v0] Requesting spend permission for sub account...');
-        
+
         // Try using SDK utility if available
         if (sdkRef.current?.requestSpendPermission) {
           console.log('[v0] Using SDK requestSpendPermission...');
@@ -255,19 +315,19 @@ export function useBaseSubAccount() {
             periodInDays: 30,
             provider,
           });
-          
+
           console.log('[v0] ✅ Spend permission granted:', permission);
           return permission;
-        } else {
-          console.warn('[v0] SDK requestSpendPermission not available');
-          return null;
         }
+
+        console.warn('[v0] SDK requestSpendPermission not available for this provider');
+        return null;
       } catch (error) {
         console.warn('[v0] Spend permission request failed:', error);
         throw error;
       }
     },
-    [provider, subAccountAddress]
+    [provider, subAccountAddress, universalAddress]
   );
 
   // Send transaction from the sub account

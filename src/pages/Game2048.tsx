@@ -25,6 +25,9 @@ export default function Game2048Page() {
     connected: isBaseConnected,
     activeAddress: baseAddress,
     disconnect: baseDisconnect,
+    connect: baseConnect,
+    isConnecting: isBaseConnecting,
+    error: baseWalletError,
     sendTransaction: baseSendTx,
     provider: baseProvider,
     universalAddress,
@@ -69,8 +72,12 @@ export default function Game2048Page() {
       const requestPermissions = async () => {
         try {
           const allowance = ethers.parseEther('10'); // 10 ETH limit per day
-          await requestSpendPermission(allowance);
-          console.log('[v0] ✅ Spend permissions granted successfully');
+          const permission = await requestSpendPermission(allowance);
+          if (permission) {
+            console.log('[v0] ✅ Spend permissions granted successfully');
+          } else {
+            console.info('[v0] Spend permission not required/supported for current provider');
+          }
         } catch (error) {
           console.warn('[v0] Spend permission request failed (will use fallback):', error);
           // Fallback: transactions will still work, just require approval each time
@@ -322,7 +329,14 @@ export default function Game2048Page() {
   const isConnected = authenticated || isBaseConnected;
 
   if (!isConnected) {
-    return <LoginScreen onEmailLogin={login} />;
+    return (
+      <LoginScreen
+        onEmailLogin={login}
+        onBaseWalletConnect={baseConnect}
+        isBaseConnecting={isBaseConnecting}
+        baseWalletError={baseWalletError}
+      />
+    );
   }
 
   const connectionType = authenticated ? 'Privy Email' : 'Base Wallet (Sub Account)';
