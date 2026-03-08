@@ -34,6 +34,11 @@ interface SpendPermission {
   extraData: string;
 }
 
+export interface SpendPermissionParams {
+  allowanceEth: string;
+  durationDays: number;
+}
+
 export function useBaseSubAccount() {
   const [provider, setProvider] = useState<any>(null);
   const [universalAddress, setUniversalAddress] = useState('');
