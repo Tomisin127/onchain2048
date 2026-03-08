@@ -294,6 +294,12 @@ export default function Game2048Page() {
     setTouchStart(null);
   };
 
+  const isConnected = authenticated || isBaseConnected;
+  const walletAddr = embeddedWalletAddress || baseAddress || '';
+  const { displayName: baseDisplayName } = useBaseName(walletAddr);
+  const connectionType = authenticated ? 'Privy Email' : 'Base Wallet';
+  const userDisplay = user?.email?.address || baseDisplayName || 'Connected';
+
   if (!ready) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -301,8 +307,6 @@ export default function Game2048Page() {
       </div>
     );
   }
-
-  const isConnected = authenticated || isBaseConnected;
 
   if (!isConnected) {
     return (
@@ -314,11 +318,6 @@ export default function Game2048Page() {
       />
     );
   }
-
-  const walletAddr = embeddedWalletAddress || baseAddress || '';
-  const { displayName: baseDisplayName } = useBaseName(walletAddr);
-  const connectionType = authenticated ? 'Privy Email' : 'Base Wallet';
-  const userDisplay = user?.email?.address || baseDisplayName || 'Connected';
 
   const handleDisconnect = () => {
     if (authenticated) logout();
