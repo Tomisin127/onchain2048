@@ -20,9 +20,13 @@ export default function Game2048Page() {
   const { ready, authenticated, login, logout, user } = usePrivy();
   const { wallets } = useWallets();
   const { sendTransaction } = useSendTransaction();
-  const { address: wagmiAddress, isConnected: isWagmiConnected } = useAccount();
-  const { disconnect: wagmiDisconnect } = useDisconnect();
-  const { sendTransactionAsync: wagmiSendTx } = useWagmiSendTransaction();
+  const {
+    connected: isBaseConnected,
+    activeAddress: baseAddress,
+    connect: baseConnect,
+    disconnect: baseDisconnect,
+    sendTransaction: baseSendTx,
+  } = useBaseSubAccount();
 
   const {
     tiles,
