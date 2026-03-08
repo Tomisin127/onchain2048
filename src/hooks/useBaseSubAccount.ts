@@ -130,7 +130,7 @@ export function useBaseSubAccount() {
     void fetchRelayerAddress();
   }, []);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (permissionParams?: SpendPermissionParams) => {
     let activeProvider = provider;
 
     // Retry provider detection if missing
