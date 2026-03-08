@@ -12,6 +12,7 @@ import { SwapModal } from '@/components/SwapModal';
 import { useGameSounds } from '@/hooks/useGameSounds';
 import { use2048Game } from '@/hooks/use2048Game';
 import { Direction } from '@/types/game';
+import { useBaseName } from '@/hooks/useBaseName';
 
 const MOVE_COST_USD = 0.0001;
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249' as const;
@@ -314,9 +315,10 @@ export default function Game2048Page() {
     );
   }
 
-  const connectionType = authenticated ? 'Privy Email' : 'Base Wallet (Sub Account)';
-  const userDisplay = user?.email?.address || (baseAddress ? `${baseAddress.slice(0, 6)}...${baseAddress.slice(-4)}` : 'Connected');
   const walletAddr = embeddedWalletAddress || baseAddress || '';
+  const { displayName: baseDisplayName } = useBaseName(walletAddr);
+  const connectionType = authenticated ? 'Privy Email' : 'Base Wallet';
+  const userDisplay = user?.email?.address || baseDisplayName || 'Connected';
 
   const handleDisconnect = () => {
     if (authenticated) logout();
