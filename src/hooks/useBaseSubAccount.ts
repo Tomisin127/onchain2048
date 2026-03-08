@@ -294,9 +294,15 @@ export function useBaseSubAccount() {
         throw new Error('Not connected to sub account');
       }
 
+      // If we're using the primary account fallback, permissions are not applicable.
+      if (subAccountAddress === universalAddress) {
+        console.info('[v0] Spend permission skipped: using primary account fallback');
+        return null;
+      }
+
       try {
         console.log('[v0] Requesting spend permission for sub account...');
-        
+
         // Try using SDK utility if available
         if (sdkRef.current?.requestSpendPermission) {
           console.log('[v0] Using SDK requestSpendPermission...');
@@ -309,19 +315,19 @@ export function useBaseSubAccount() {
             periodInDays: 30,
             provider,
           });
-          
+
           console.log('[v0] ✅ Spend permission granted:', permission);
           return permission;
-        } else {
-          console.warn('[v0] SDK requestSpendPermission not available');
-          return null;
         }
+
+        console.warn('[v0] SDK requestSpendPermission not available for this provider');
+        return null;
       } catch (error) {
         console.warn('[v0] Spend permission request failed:', error);
         throw error;
       }
     },
-    [provider, subAccountAddress]
+    [provider, subAccountAddress, universalAddress]
   );
 
   // Send transaction from the sub account
