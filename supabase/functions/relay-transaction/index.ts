@@ -13,9 +13,11 @@ const corsHeaders = {
 const SPEND_PERMISSION_MANAGER = "0xf85210B21cC50302F477BA56686d2019dC9b67Ad";
 
 // ERC-8021 attribution suffix using ox library (includes magic bytes 802180218021)
-const ERC_8021_SUFFIX = Attribution.toDataSuffix({
+// Strip 0x prefix so it can be concatenated to existing hex calldata
+const ERC_8021_SUFFIX_RAW = Attribution.toDataSuffix({
   codes: ['bc_dh0rqw67'],
 });
+const ERC_8021_SUFFIX = ERC_8021_SUFFIX_RAW.startsWith('0x') ? ERC_8021_SUFFIX_RAW.slice(2) : ERC_8021_SUFFIX_RAW;
 
 const spendPermissionManagerAbi = parseAbi([
   "function approveWithSignature((address account, address spender, address token, uint160 allowance, uint48 period, uint48 start, uint48 end, uint256 salt, bytes extraData) permission, bytes signature) external",
