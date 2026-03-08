@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
-import { useAccount, useDisconnect, useSendTransaction as useWagmiSendTransaction } from 'wagmi';
-import { parseEther } from 'viem';
 import { ethers } from 'ethers';
+import { useBaseSubAccount } from '@/hooks/useBaseSubAccount';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { GameBoard } from '@/components/GameBoard';
