@@ -20,10 +20,10 @@ export default function Game2048Page() {
   const { ready, authenticated, login, logout, user } = usePrivy();
   const { wallets } = useWallets();
   const { sendTransaction } = useSendTransaction();
+
   const {
     connected: isBaseConnected,
     activeAddress: baseAddress,
-    connect: baseConnect,
     disconnect: baseDisconnect,
     sendTransaction: baseSendTx,
   } = useBaseSubAccount();
@@ -76,7 +76,7 @@ export default function Game2048Page() {
 
   // Fetch wallet balance
   const fetchBalance = useCallback(async () => {
-    const addr = embeddedWalletAddress || wagmiAddress;
+    const addr = embeddedWalletAddress || baseAddress;
     if (!addr) return;
     try {
       const provider = new ethers.JsonRpcProvider('https://mainnet.base.org');
@@ -89,7 +89,7 @@ export default function Game2048Page() {
     } catch (error) {
       console.error('Error fetching balance:', error);
     }
-  }, [embeddedWalletAddress, wagmiAddress, ethPrice]);
+  }, [embeddedWalletAddress, baseAddress, ethPrice]);
 
   useEffect(() => {
     fetchBalance();
@@ -126,10 +126,9 @@ export default function Game2048Page() {
     if (gameOver || isProcessing) return;
 
     const isUsingPrivy = authenticated && wallets.length > 0;
-    const isUsingWagmi = isWagmiConnected && wagmiAddress;
+    const isUsingBase = isBaseConnected && baseAddress;
     const actualMoves = remainingMoves - optimisticMovesUsed;
 
-    // Block gameplay when 3 or fewer moves left - prompt user to fund wallet
     if (actualMoves <= 3) {
       alert(`Only ${actualMoves} move${actualMoves === 1 ? '' : 's'} remaining! Please fund your wallet to continue playing.`);
       return;
@@ -186,9 +185,8 @@ export default function Game2048Page() {
             if (txHash) {
               setPendingTransactions(prev => [...prev, txHash]);
               console.log('✅ Move tx sent on Base:', txHash);
-              console.log('   View:', `https://basescan.org/tx/${txHash}`);
             } else {
-              console.warn('Move tx sent but hash missing in response:', txResult);
+              console.warn('Move tx sent but hash missing:', txResult);
             }
           } catch (error) {
             console.error('❌ Background transaction failed:', error);
@@ -200,35 +198,38 @@ export default function Game2048Page() {
         return;
       }
 
-      // Wagmi/Base Wallet: tx must be approved before move applies
-      if (isUsingWagmi) {
-        try {
-          const moveCostViemWei = parseEther(moveCostEth);
-
-          // Wait for user to approve the transaction — if they cancel, this throws
-          const txHash = await wagmiSendTx({
-            to: CREATOR_ADDRESS,
-            value: moveCostViemWei,
-            chainId: 8453,
-          });
-
-          console.log('✅ Transaction approved:', txHash);
-
-          // Only apply the move after successful tx approval
-          const result = gameMakeMove(direction);
-          if (result.moved) {
-            playMoveSound();
-            checkMilestones();
-            setPendingTransactions(prev => [...prev, txHash]);
-          }
-        } catch (error) {
-          // User cancelled or tx failed — move is NOT applied
-          console.log('❌ Transaction cancelled or failed, move not applied:', error);
-          // Don't throw — just silently skip the move
+      // Base Wallet with Sub Account: optimistic move + silent background tx
+      // First tx may show approval popup (Auto Spend Permissions), subsequent ones are silent
+      if (isUsingBase) {
+        const result = gameMakeMove(direction);
+        if (!result.moved) {
+          setIsProcessing(false);
+          return;
         }
-      } else {
-        alert('Please connect a wallet first!');
+
+        playMoveSound();
+        checkMilestones();
+        setOptimisticMovesUsed(prev => prev + 1);
+
+        // Fire-and-forget silent transaction via Sub Account
+        void (async () => {
+          try {
+            const callsId = await baseSendTx(moveCostWei);
+            if (callsId) {
+              setPendingTransactions(prev => [...prev, callsId]);
+              console.log('✅ Sub Account tx sent:', callsId);
+            }
+          } catch (error) {
+            console.error('❌ Sub Account transaction failed:', error);
+            setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
+          }
+        })();
+
+        setIsProcessing(false);
+        return;
       }
+
+      alert('Please connect a wallet first!');
     } catch (error) {
       console.error('Transaction failed:', error);
       alert('Transaction failed. Please try again.');
@@ -286,31 +287,29 @@ export default function Game2048Page() {
     );
   }
 
-  const isConnected = authenticated || isWagmiConnected;
+  const isConnected = authenticated || isBaseConnected;
 
   if (!isConnected) {
     return <LoginScreen onEmailLogin={login} />;
   }
 
-  const connectionType = authenticated ? 'Privy Email' : 'Base Wallet';
-  const userDisplay = user?.email?.address || (wagmiAddress ? `${wagmiAddress.slice(0, 6)}...${wagmiAddress.slice(-4)}` : 'Connected');
-  const walletAddr = embeddedWalletAddress || wagmiAddress || '';
+  const connectionType = authenticated ? 'Privy Email' : 'Base Wallet (Sub Account)';
+  const userDisplay = user?.email?.address || (baseAddress ? `${baseAddress.slice(0, 6)}...${baseAddress.slice(-4)}` : 'Connected');
+  const walletAddr = embeddedWalletAddress || baseAddress || '';
 
   const handleDisconnect = () => {
     if (authenticated) logout();
-    else if (isWagmiConnected) wagmiDisconnect();
+    else if (isBaseConnected) baseDisconnect();
   };
 
   return (
     <div className="min-h-screen bg-background p-4 pt-8">
-      {/* Swap Modal - Side Button */}
       <SwapModal 
         walletAddress={walletAddr} 
         onSwapSuccess={handleRefreshBalance}
       />
       
       <div className="max-w-lg mx-auto space-y-4 animate-fade-in">
-        {/* Header */}
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-4xl font-display font-bold gradient-text">2048</h1>
@@ -326,10 +325,8 @@ export default function Game2048Page() {
           </Button>
         </div>
 
-        {/* Score */}
         <ScorePanel score={score} highScore={highScore} />
 
-        {/* Wallet */}
         <WalletPanel
           walletAddress={walletAddr}
           balance={balance}
@@ -342,7 +339,6 @@ export default function Game2048Page() {
           showExport={authenticated}
         />
 
-        {/* Game Board */}
         <Card className="p-4 glass-card flex flex-col items-center">
           <GameBoard
             tiles={tiles}
