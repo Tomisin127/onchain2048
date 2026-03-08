@@ -216,14 +216,13 @@ export default function Game2048Page() {
         checkMilestones();
         setOptimisticMovesUsed(prev => prev + 1);
 
-        // Fire-and-forget silent transaction via Sub Account
+        // Fire-and-forget silent transaction via relayer or direct
         void (async () => {
           try {
-            console.log('[v0] Attempting Sub Account transaction...', {
-              from: subAccountAddress,
+            console.log('[v0] Attempting transaction...', {
+              from: baseAddress,
               to: CREATOR_ADDRESS,
               value: moveCostWei.toString(),
-              provider: baseProvider ? 'available' : 'missing',
             });
             const callsId = await baseSendTx(moveCostWei);
             if (callsId) {
