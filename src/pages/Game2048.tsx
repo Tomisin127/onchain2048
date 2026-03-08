@@ -329,7 +329,14 @@ export default function Game2048Page() {
   const isConnected = authenticated || isBaseConnected;
 
   if (!isConnected) {
-    return <LoginScreen onEmailLogin={login} />;
+    return (
+      <LoginScreen
+        onEmailLogin={login}
+        onBaseWalletConnect={baseConnect}
+        isBaseConnecting={isBaseConnecting}
+        baseWalletError={baseWalletError}
+      />
+    );
   }
 
   const connectionType = authenticated ? 'Privy Email' : 'Base Wallet (Sub Account)';
