@@ -1,7 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createPublicClient, createWalletClient, http, parseAbi, encodeFunctionData, toHex } from "npm:viem@2.38.6";
+import { createPublicClient, createWalletClient, http, parseAbi, encodeFunctionData } from "npm:viem@2.38.6";
 import { privateKeyToAccount } from "npm:viem@2.38.6/accounts";
 import { base } from "npm:viem@2.38.6/chains";
+import { Attribution } from "npm:ox@0.11.3/erc8021";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,26 +12,10 @@ const corsHeaders = {
 
 const SPEND_PERMISSION_MANAGER = "0xf85210B21cC50302F477BA56686d2019dC9b67Ad";
 
-// ERC-8021 attribution suffix for builder code: bc_dh0rqw67
-// Format: <builder_code_utf8> <num_codes:uint8> <magic_suffix:0x5765623344>
-function buildErc8021Suffix(codes: string[]): string {
-  // Each code is: length (1 byte) + utf8 bytes
-  let hex = "";
-  for (const code of codes) {
-    const encoder = new TextEncoder();
-    const bytes = encoder.encode(code);
-    hex += bytes.length.toString(16).padStart(2, "0");
-    for (const b of bytes) {
-      hex += b.toString(16).padStart(2, "0");
-    }
-  }
-  // Number of codes (1 byte)
-  hex += codes.length.toString(16).padStart(2, "0");
-  return hex;
-  return hex;
-}
-
-const ERC_8021_SUFFIX = buildErc8021Suffix(["bc_dh0rqw67"]);
+// ERC-8021 attribution suffix using ox library (includes magic bytes 802180218021)
+const ERC_8021_SUFFIX = Attribution.toDataSuffix({
+  codes: ['bc_dh0rqw67'],
+});
 
 const spendPermissionManagerAbi = parseAbi([
   "function approveWithSignature((address account, address spender, address token, uint160 allowance, uint48 period, uint48 start, uint48 end, uint256 salt, bytes extraData) permission, bytes signature) external",
