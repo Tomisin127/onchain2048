@@ -207,14 +207,22 @@ export function useBaseSubAccount() {
       // Request Spend Permission — spender = relayer wallet address
       console.log('[v0] Requesting spend permission for spender (relayer):', spenderAddr);
       const now = Math.floor(Date.now() / 1000);
+
+      // Use user-configured values or defaults
+      const allowanceEth = permissionParams?.allowanceEth || '1';
+      const durationDays = permissionParams?.durationDays || 30;
+      const allowanceWei = BigInt(Math.floor(parseFloat(allowanceEth) * 1e18)).toString();
+
+      console.log('[v0] Spend permission config:', { allowanceEth, durationDays, allowanceWei });
+
       const permission: SpendPermission = {
         account: primaryAddr,
         spender: spenderAddr,
         token: NATIVE_TOKEN_ADDRESS,
-        allowance: '1000000000000000000', // 1 ETH
+        allowance: allowanceWei,
         period: 86400, // 1 day
         start: now,
-        end: now + 30 * 86400, // 30 days
+        end: now + durationDays * 86400,
         salt: '0x' + Math.floor(Math.random() * 1e18).toString(16).padStart(64, '0'),
         extraData: '0x',
       };
