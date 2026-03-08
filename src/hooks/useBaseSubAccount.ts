@@ -19,6 +19,8 @@ const SPEND_PERMISSION_TYPES = {
 } as const;
 
 const SPEND_PERMISSION_MANAGER = '0xf85210B21cC50302F477BA56686d2019dC9b67Ad';
+const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 interface SpendPermission {
   account: string;
