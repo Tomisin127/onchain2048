@@ -157,7 +157,9 @@ export function useBaseSubAccount() {
     }
 
     if (!relayerAddress) {
-      console.warn('[v0] Relayer address not yet fetched, spend permissions may fail');
+      const errorMsg = 'Silent transaction relayer unavailable. Please try again in a moment.';
+      setError(errorMsg);
+      throw new Error(errorMsg);
     }
 
     setIsConnecting(true);
@@ -179,14 +181,11 @@ export function useBaseSubAccount() {
       console.log('[v0] Primary address:', primaryAddr);
       setUniversalAddress(primaryAddr);
       setSubAccountAddress(primaryAddr);
+      setSpendPermission(null);
+      setSpendSignature('');
 
       // Request Spend Permission — spender = relayer wallet address
       const spenderAddr = relayerAddress;
-      if (!spenderAddr) {
-        console.warn('[v0] No relayer address available, skipping spend permission');
-        setConnected(true);
-        return;
-      }
 
       console.log('[v0] Requesting spend permission for spender (relayer):', spenderAddr);
       const now = Math.floor(Date.now() / 1000);
