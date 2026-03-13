@@ -10,6 +10,7 @@ import { ScorePanel } from '@/components/ScorePanel';
 import { WalletPanel } from '@/components/WalletPanel';
 import { LoginScreen } from '@/components/LoginScreen';
 import { SwapModal } from '@/components/SwapModal';
+import { BaseFeaturePanel } from '@/components/BaseFeaturePanel';
 import { useGameSounds } from '@/hooks/useGameSounds';
 import { use2048Game } from '@/hooks/use2048Game';
 import { Direction } from '@/types/game';
@@ -363,6 +364,8 @@ export default function Game2048Page() {
           onRefresh={handleRefreshBalance}
           showExport={authenticated}
         />
+
+        <BaseFeaturePanel walletAddress={walletAddr} balance={balance} />
 
         <Card className="p-4 glass-card flex flex-col items-center">
           <GameBoard
