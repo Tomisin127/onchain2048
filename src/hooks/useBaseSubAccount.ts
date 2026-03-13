@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { base } from 'viem/chains';
-import { sdk as farcasterSdk } from '@farcaster/miniapp-sdk';
 import { supabase } from '@/integrations/supabase/client';
 
 // EIP-712 typed data for SpendPermission
@@ -61,36 +60,7 @@ export function useBaseSubAccount() {
       console.log('[v0] Starting wallet provider initialization...');
       setError('');
 
-      // 1. Farcaster miniapp SDK ethProvider
-      try {
-        const directFarcasterProvider = (farcasterSdk as any)?.wallet?.ethProvider;
-        if (directFarcasterProvider && typeof directFarcasterProvider.request === 'function') {
-          console.log('✅ Provider from Farcaster miniapp SDK (direct wallet provider)');
-          setProvider(directFarcasterProvider);
-          setProviderSource('farcaster');
-          return;
-        }
-      } catch (err) {
-        console.warn('[v0] Direct Farcaster provider check failed:', err);
-      }
-
-      // 2. Farcaster miniapp context check
-      try {
-        const isInMiniApp = await farcasterSdk.isInMiniApp();
-        if (isInMiniApp) {
-          const ethProvider = (farcasterSdk as any)?.wallet?.ethProvider;
-          if (ethProvider && typeof ethProvider.request === 'function') {
-            console.log('✅ Provider from Farcaster miniapp SDK (miniapp context)');
-            setProvider(ethProvider);
-            setProviderSource('farcaster');
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn('[v0] Farcaster miniapp provider not available:', err);
-      }
-
-      // 3. window.ethereum fallback
+      // window.ethereum provider detection
       try {
         const win = window as any;
         if (win.ethereum && typeof win.ethereum.request === 'function') {
@@ -104,7 +74,7 @@ export function useBaseSubAccount() {
       }
 
       console.warn('⚠️ No wallet provider found');
-      setError('No wallet provider detected. Please open this app in the Base app.');
+      setError('No wallet provider detected. Please ensure you have a Web3 wallet installed.');
     };
 
     void initProvider();
@@ -134,16 +104,6 @@ export function useBaseSubAccount() {
     let activeProvider = provider;
 
     // Retry provider detection if missing
-    if (!activeProvider) {
-      try {
-        const fp = (farcasterSdk as any)?.wallet?.ethProvider;
-        if (fp && typeof fp.request === 'function') {
-          activeProvider = fp;
-          setProvider(fp);
-          setProviderSource('farcaster');
-        }
-      } catch {}
-    }
     if (!activeProvider) {
       try {
         const win = window as any;

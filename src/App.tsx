@@ -6,7 +6,6 @@ import { WagmiProvider } from 'wagmi';
 import { config } from '@/lib/wagmi';
 import { PrivyWrapper } from '@/lib/privy/provider';
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import FarcasterWrapper from "@/components/FarcasterWrapper";
 import Game2048Page from "./pages/Game2048";
 import NotFound from "./pages/NotFound";
 
@@ -24,18 +23,16 @@ const App = () => (
   <WagmiProvider config={config}>
     <QueryClientProvider client={queryClient}>
       <PrivyWrapper>
-        <FarcasterWrapper>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <Routes>
-                <Route path="/" element={<Game2048Page />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </BrowserRouter>
-          </TooltipProvider>
-        </FarcasterWrapper>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Game2048Page />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
       </PrivyWrapper>
     </QueryClientProvider>
   </WagmiProvider>
