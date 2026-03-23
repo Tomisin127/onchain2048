@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp, Zap, DollarSign, LogIn, TrendingUp, Wallet, Glo
 import { useERC4337 } from '@/hooks/useERC4337';
 import { useBasePay } from '@/hooks/useBasePay';
 import { useSIWE } from '@/hooks/useSIWE';
-import { initializeOnramp } from '@/lib/onramp';
+import { openOnrampFlow, getBaseOnrampConfig } from '@/lib/onramp';
 
 interface BaseFeaturePanelProps {
   walletAddress: string;
@@ -62,7 +62,10 @@ export function BaseFeaturePanel({ walletAddress, balance }: BaseFeaturePanelPro
       description: 'Fiat to crypto purchasing',
       status: 'ready',
       details: 'Buy ETH with your preferred payment method',
-      action: () => initializeOnramp(walletAddress),
+      action: () => {
+        const config = getBaseOnrampConfig(walletAddress);
+        openOnrampFlow(config);
+      },
       color: 'from-purple-400 to-pink-500',
     },
     {
