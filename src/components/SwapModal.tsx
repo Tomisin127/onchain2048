@@ -538,13 +538,6 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
                 </div>
               </div>
 
-              {/* Warning */}
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
-                <AlertCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-destructive/90">
-                  This swap uses Uniswap V3 on Base. Ensure sufficient liquidity exists. Large trades may have significant price impact.
-                </p>
-              </div>
 
               {/* Action Buttons */}
               {needsApproval ? (
