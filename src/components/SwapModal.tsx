@@ -16,9 +16,17 @@ import { toast } from 'sonner';
 // Contract addresses on Base Mainnet
 const TOKEN_ADDRESS = '0xa27567af20caff5747869a493c8a6a7444b20f9c' as const;
 const WETH_ADDRESS = '0x4200000000000000000000000000000000000006' as const;
+// Base Mainnet Uniswap V3 Quoter V2 (correct address)
 const UNISWAP_V3_QUOTER = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a' as const;
-const UNISWAP_V3_QUOTER_V2 = '0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6' as const; // Legacy quoter fallback
 const UNISWAP_V3_ROUTER = '0x2626664c2603336E57B271c5C0b26F421741e481' as const;
+
+// Multiple RPC endpoints for reliability
+const BASE_RPC_URLS = [
+  'https://mainnet.base.org',
+  'https://base.llamarpc.com',
+  'https://1rpc.io/base',
+  'https://base.drpc.org',
+] as const;
 
 const POOL_FEES = [10000, 3000, 500, 100] as const;
 
@@ -80,22 +88,7 @@ const QUOTER_ABI = [
   },
 ] as const;
 
-// Legacy QuoterV2 ABI (simpler interface, sometimes more reliable)
-const QUOTER_V2_ABI = [
-  {
-    name: 'quoteExactInputSingle',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'tokenIn', type: 'address' },
-      { name: 'tokenOut', type: 'address' },
-      { name: 'fee', type: 'uint24' },
-      { name: 'amountIn', type: 'uint256' },
-      { name: 'sqrtPriceLimitX96', type: 'uint160' },
-    ],
-    outputs: [{ name: 'amountOut', type: 'uint256' }],
-  },
-] as const;
+
 
 const SWAP_ROUTER_ABI = [
   {
@@ -164,12 +157,22 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
 
   const activeAddress = walletAddress as `0x${string}` | undefined;
 
+  // Helper to create a client with fallback RPCs
+  const createClientWithFallback = useCallback(async () => {
+    const { createPublicClient, http, fallback } = await import('viem');
+    return createPublicClient({ 
+      chain: base, 
+      transport: fallback(
+        BASE_RPC_URLS.map(url => http(url, { timeout: 10000, retryCount: 1 }))
+      )
+    });
+  }, []);
+
   // Fetch balances
   const fetchBalances = useCallback(async () => {
     if (!activeAddress) return;
     try {
-      const { createPublicClient, http } = await import('viem');
-      const client = createPublicClient({ chain: base, transport: http('https://mainnet.base.org') });
+      const client = await createClientWithFallback();
 
       const [ethBal, tokenBal, allowance] = await Promise.all([
         client.getBalance({ address: activeAddress }),
@@ -202,9 +205,9 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
         setNeedsApproval(false);
       }
     } catch (error) {
-      console.error('Balance fetch error:', error);
+      console.error('[v0] Balance fetch error:', error);
     }
-  }, [activeAddress, isBuyMode, inputAmount]);
+  }, [activeAddress, isBuyMode, inputAmount, createClientWithFallback]);
 
   useEffect(() => {
     if (isOpen) {
@@ -221,7 +224,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
     }
   }, [inputAmount, isBuyMode, isOpen]);
 
-  // Get quote using eth_call (more reliable for quoter)
+  // Get quote using eth_call with multiple RPC fallbacks for reliability
   const getQuote = useCallback(async (amount: string) => {
     if (!amount || parseFloat(amount) === 0) {
       setOutputAmount('');
@@ -234,105 +237,99 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
       const tokenOut = isBuyMode ? TOKEN_ADDRESS : WETH_ADDRESS;
 
       const { createPublicClient, http, encodeFunctionData: encodeData, decodeFunctionResult } = await import('viem');
-      const client = createPublicClient({ chain: base, transport: http('https://mainnet.base.org') });
-
-      let bestOutput = BigInt(0);
-      let foundFee: number = POOL_FEES[0];
-
-      // Try all fee tiers in parallel for faster response
-      const quotePromises = POOL_FEES.map(async (fee) => {
-        try {
-          const callData = encodeData({
-            abi: QUOTER_ABI,
-            functionName: 'quoteExactInputSingle',
-            args: [{
-              tokenIn,
-              tokenOut,
-              amountIn,
-              fee,
-              sqrtPriceLimitX96: BigInt(0),
-            }],
-          });
-
-          const result = await client.call({
-            to: UNISWAP_V3_QUOTER,
-            data: callData,
-          });
-
-          if (result.data) {
-            const decoded = decodeFunctionResult({
-              abi: QUOTER_ABI,
-              functionName: 'quoteExactInputSingle',
-              data: result.data,
-            });
-            return { fee, output: decoded[0] as bigint };
-          }
-          return null;
-        } catch {
-          // This fee tier has no pool or no liquidity
-          return null;
-        }
-      });
-
-      const results = await Promise.all(quotePromises);
       
-      for (const result of results) {
-        if (result && result.output > bestOutput) {
-          bestOutput = result.output;
-          foundFee = result.fee;
-        }
-      }
+      // Helper to try quote with a specific RPC
+      const tryQuoteWithRpc = async (rpcUrl: string): Promise<{ output: bigint; fee: number } | null> => {
+        const client = createPublicClient({ 
+          chain: base, 
+          transport: http(rpcUrl, { 
+            timeout: 10000,
+            retryCount: 1,
+          }) 
+        });
 
-      // If no results from main quoter, try legacy quoter
-      if (bestOutput === BigInt(0)) {
-        const legacyPromises = POOL_FEES.map(async (fee) => {
+        let bestOutput = BigInt(0);
+        let foundFee: number = POOL_FEES[0];
+
+        // Try all fee tiers in parallel
+        const quotePromises = POOL_FEES.map(async (fee) => {
           try {
             const callData = encodeData({
-              abi: QUOTER_V2_ABI,
+              abi: QUOTER_ABI,
               functionName: 'quoteExactInputSingle',
-              args: [tokenIn, tokenOut, fee, amountIn, BigInt(0)],
+              args: [{
+                tokenIn,
+                tokenOut,
+                amountIn,
+                fee,
+                sqrtPriceLimitX96: BigInt(0),
+              }],
             });
 
             const result = await client.call({
-              to: UNISWAP_V3_QUOTER_V2,
+              to: UNISWAP_V3_QUOTER,
               data: callData,
             });
 
-            if (result.data) {
+            if (result.data && result.data !== '0x') {
               const decoded = decodeFunctionResult({
-                abi: QUOTER_V2_ABI,
+                abi: QUOTER_ABI,
                 functionName: 'quoteExactInputSingle',
                 data: result.data,
               });
-              return { fee, output: decoded as bigint };
+              return { fee, output: decoded[0] as bigint };
             }
             return null;
           } catch {
+            // This fee tier has no pool or no liquidity - this is expected
             return null;
           }
         });
 
-        const legacyResults = await Promise.all(legacyPromises);
+        const results = await Promise.all(quotePromises);
         
-        for (const result of legacyResults) {
+        for (const result of results) {
           if (result && result.output > bestOutput) {
             bestOutput = result.output;
             foundFee = result.fee;
           }
         }
+
+        if (bestOutput > BigInt(0)) {
+          return { output: bestOutput, fee: foundFee };
+        }
+        return null;
+      };
+
+      // Try each RPC endpoint until we get a valid quote
+      let quoteResult: { output: bigint; fee: number } | null = null;
+      
+      for (const rpcUrl of BASE_RPC_URLS) {
+        try {
+          quoteResult = await tryQuoteWithRpc(rpcUrl);
+          if (quoteResult) {
+            break; // Successfully got a quote
+          }
+        } catch (err) {
+          console.log(`[v0] RPC ${rpcUrl} failed, trying next...`, err);
+          continue; // Try next RPC
+        }
       }
 
-      if (bestOutput > BigInt(0)) {
-        setOutputAmount(formatUnits(bestOutput, 18));
-        setBestFee(foundFee);
+      if (quoteResult && quoteResult.output > BigInt(0)) {
+        setOutputAmount(formatUnits(quoteResult.output, 18));
+        setBestFee(quoteResult.fee);
       } else {
+        // Don't show error toast for every failed quote - only set empty output
         setOutputAmount('');
-        toast.error('No liquidity found for this pair.');
+        // Only show error if user has entered a reasonable amount
+        if (parseFloat(amount) > 0.0001) {
+          console.log('[v0] No liquidity found for quote amount:', amount);
+        }
       }
     } catch (error) {
-      console.error('Quote error:', error);
+      console.error('[v0] Quote error:', error);
       setOutputAmount('');
-      toast.error('Could not fetch quote.');
     } finally {
       setIsQuoting(false);
     }
@@ -366,15 +363,14 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
       const hash = extractTxHash(result);
       if (hash) {
         toast.success('Approval sent! Waiting for confirmation...');
-        // Wait for confirmation
-        const { createPublicClient, http } = await import('viem');
-        const client = createPublicClient({ chain: base, transport: http('https://mainnet.base.org') });
+        // Wait for confirmation using fallback client
+        const client = await createClientWithFallback();
         await client.waitForTransactionReceipt({ hash: hash as `0x${string}` });
         toast.success('Approval confirmed!');
         await fetchBalances();
       }
     } catch (error) {
-      console.error('Approve error:', error);
+      console.error('[v0] Approve error:', error);
       toast.error('Approval failed');
     } finally {
       setIsLoading(false);
@@ -460,8 +456,8 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
         setLastTxHash(hash);
         toast.success('Swap sent! Waiting for confirmation...');
 
-        const { createPublicClient, http } = await import('viem');
-        const client = createPublicClient({ chain: base, transport: http('https://mainnet.base.org') });
+        // Wait for confirmation using fallback client
+        const client = await createClientWithFallback();
         await client.waitForTransactionReceipt({ hash: hash as `0x${string}` });
 
         toast.success('Swap completed!');
@@ -471,7 +467,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
         onSwapSuccess?.();
       }
     } catch (error) {
-      console.error('Swap error:', error);
+      console.error('[v0] Swap error:', error);
       toast.error('Swap failed');
     } finally {
       setIsLoading(false);
