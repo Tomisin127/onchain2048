@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeftRight, ArrowDownUp, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
+import { ArrowLeftRight, ArrowDownUp, Loader2, ExternalLink } from 'lucide-react';
 import { parseEther, formatEther, parseUnits, formatUnits, encodeFunctionData } from 'viem';
 import { base } from 'wagmi/chains';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ const WETH_ADDRESS = '0x4200000000000000000000000000000000000006' as const;
 const UNISWAP_V3_QUOTER = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a' as const;
 const UNISWAP_V3_ROUTER = '0x2626664c2603336E57B271c5C0b26F421741e481' as const;
 
-const POOL_FEE = 10000;
+const POOL_FEES = [10000, 3000, 500, 100] as const;
 
 // ABIs
 const ERC20_ABI = [
@@ -138,6 +138,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
   const [isQuoting, setIsQuoting] = useState(false);
   const [needsApproval, setNeedsApproval] = useState(false);
   const [slippage, setSlippage] = useState(5);
+  const [bestFee, setBestFee] = useState<number>(10000);
   const [isLoading, setIsLoading] = useState(false);
   const [lastTxHash, setLastTxHash] = useState('');
   const [ethBalance, setEthBalance] = useState('0');
@@ -217,24 +218,44 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
       const { createPublicClient, http } = await import('viem');
       const client = createPublicClient({ chain: base, transport: http('https://mainnet.base.org') });
 
-      const result = await client.simulateContract({
-        address: UNISWAP_V3_QUOTER,
-        abi: QUOTER_ABI,
-        functionName: 'quoteExactInputSingle',
-        args: [{
-          tokenIn,
-          tokenOut,
-          amountIn,
-          fee: POOL_FEE,
-          sqrtPriceLimitX96: BigInt(0),
-        }],
-      });
+      let bestOutput = BigInt(0);
+      let foundFee: number = POOL_FEES[0];
 
-      setOutputAmount(formatUnits(result.result[0], 18));
+      for (const fee of POOL_FEES) {
+        try {
+          const result = await client.simulateContract({
+            address: UNISWAP_V3_QUOTER,
+            abi: QUOTER_ABI,
+            functionName: 'quoteExactInputSingle',
+            args: [{
+              tokenIn,
+              tokenOut,
+              amountIn,
+              fee,
+              sqrtPriceLimitX96: BigInt(0),
+            }],
+          });
+          const out = result.result[0];
+          if (out > bestOutput) {
+            bestOutput = out;
+            foundFee = fee;
+          }
+        } catch {
+          // This fee tier has no pool or no liquidity, skip
+        }
+      }
+
+      if (bestOutput > BigInt(0)) {
+        setOutputAmount(formatUnits(bestOutput, 18));
+        setBestFee(foundFee);
+      } else {
+        setOutputAmount('');
+        toast.error('No liquidity found for this pair.');
+      }
     } catch (error) {
       console.error('Quote error:', error);
       setOutputAmount('');
-      toast.error('Could not fetch quote. Pool may lack liquidity.');
+      toast.error('Could not fetch quote.');
     } finally {
       setIsQuoting(false);
     }
@@ -309,7 +330,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
           args: [{
             tokenIn: WETH_ADDRESS,
             tokenOut: TOKEN_ADDRESS,
-            fee: POOL_FEE,
+            fee: bestFee,
             recipient: activeAddress,
             amountIn,
             amountOutMinimum: minOut,
@@ -331,7 +352,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
           args: [{
             tokenIn: TOKEN_ADDRESS,
             tokenOut: WETH_ADDRESS,
-            fee: POOL_FEE,
+            fee: bestFee,
             recipient: UNISWAP_V3_ROUTER,
             amountIn,
             amountOutMinimum: minOut,
@@ -388,10 +409,11 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
 
   const setMaxAmount = () => {
     if (isBuyMode) {
-      const maxEth = Math.max(0, parseFloat(ethBalance) - 0.001);
+      const maxEth = Math.max(0, parseFloat(ethBalance) * 0.9);
       setInputAmount(maxEth > 0 ? maxEth.toFixed(6) : '0');
     } else {
-      setInputAmount(formatUnits(tokenBalance, 18));
+      const maxTokens = (tokenBalance * BigInt(90)) / BigInt(100);
+      setInputAmount(formatUnits(maxTokens, 18));
     }
   };
 
@@ -429,11 +451,6 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
             </div>
           ) : (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground font-body text-center">
-                {isBuyMode
-                  ? 'Buy 2048 tokens with ETH to power your gameplay'
-                  : 'Sell your 2048 tokens back to ETH'}
-              </p>
 
               {/* Input Section */}
               <div className="bg-card/50 rounded-xl p-4 border border-border/50 space-y-3">
@@ -516,13 +533,6 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
                 </div>
               </div>
 
-              {/* Warning */}
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
-                <AlertCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-destructive/90">
-                  This swap uses Uniswap V3 on Base. Ensure sufficient liquidity exists. Large trades may have significant price impact.
-                </p>
-              </div>
 
               {/* Action Buttons */}
               {needsApproval ? (
@@ -569,12 +579,6 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
                 </a>
               )}
 
-              {/* Info Footer */}
-              <div className="text-xs text-muted-foreground/70 text-center space-y-1 font-mono pt-4 border-t border-border/30">
-                <p>Token: {TOKEN_ADDRESS.slice(0, 6)}...{TOKEN_ADDRESS.slice(-4)}</p>
-                <p>Network: Base Mainnet</p>
-                <p>DEX: Uniswap V3</p>
-              </div>
             </div>
           )}
         </div>
