@@ -219,7 +219,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
       const client = createPublicClient({ chain: base, transport: http('https://mainnet.base.org') });
 
       let bestOutput = BigInt(0);
-      let foundFee = POOL_FEES[0];
+      let foundFee: number = POOL_FEES[0];
 
       for (const fee of POOL_FEES) {
         try {
