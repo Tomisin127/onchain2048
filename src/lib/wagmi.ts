@@ -17,9 +17,8 @@ export const config = createConfig({
       },
     }),
     injected({ target: 'phantom' }),
-    // Base Account connector for native Base App support and smart account functionality
     injected({
-      target: 'baseWallet',
+      target: 'baseWallet' as any,
     }),
   ],
   transports: {

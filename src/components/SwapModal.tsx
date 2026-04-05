@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeftRight, ArrowDownUp, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
-import { useAccount, useBalance, useWriteContract, useWaitForTransactionReceipt, useReadContract, useSimulateContract } from 'wagmi';
 import { parseEther, formatEther, parseUnits, formatUnits, encodeFunctionData } from 'viem';
 import { base } from 'wagmi/chains';
 import { Button } from '@/components/ui/button';
@@ -20,7 +19,6 @@ const WETH_ADDRESS = '0x4200000000000000000000000000000000000006' as const;
 const UNISWAP_V3_QUOTER = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a' as const;
 const UNISWAP_V3_ROUTER = '0x2626664c2603336E57B271c5C0b26F421741e481' as const;
 
-// Pool fee tier (0.3% = 3000, 1% = 10000)
 const POOL_FEE = 10000;
 
 // ABIs
@@ -51,20 +49,6 @@ const ERC20_ABI = [
       { name: 'spender', type: 'address' },
     ],
     outputs: [{ name: '', type: 'uint256' }],
-  },
-  {
-    name: 'decimals',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [],
-    outputs: [{ name: '', type: 'uint8' }],
-  },
-  {
-    name: 'symbol',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [],
-    outputs: [{ name: '', type: 'string' }],
   },
 ] as const;
 
@@ -142,104 +126,91 @@ const SWAP_ROUTER_ABI = [
 interface SwapModalProps {
   walletAddress?: string;
   onSwapSuccess?: () => void;
+  sendTransaction: (params: { to: string; value?: bigint; data?: string; chainId?: number }, options?: any) => Promise<any>;
+  embeddedWalletAddress?: string;
 }
 
-export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
+export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embeddedWalletAddress }: SwapModalProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [isBuyMode, setIsBuyMode] = useState(true); // true = ETH -> Token, false = Token -> ETH
+  const [isBuyMode, setIsBuyMode] = useState(true);
   const [inputAmount, setInputAmount] = useState('');
   const [outputAmount, setOutputAmount] = useState('');
   const [isQuoting, setIsQuoting] = useState(false);
   const [needsApproval, setNeedsApproval] = useState(false);
-  const [slippage, setSlippage] = useState(5); // 5% default slippage
+  const [slippage, setSlippage] = useState(5);
+  const [isLoading, setIsLoading] = useState(false);
+  const [lastTxHash, setLastTxHash] = useState('');
+  const [ethBalance, setEthBalance] = useState('0');
+  const [tokenBalance, setTokenBalance] = useState(BigInt(0));
 
-  const { address: wagmiAddress, isConnected } = useAccount();
-  
-  // Use the passed walletAddress (which includes Privy embedded wallet) or fall back to wagmi
-  const activeAddress = (walletAddress || wagmiAddress) as `0x${string}` | undefined;
-  
-  // ETH balance
-  const { data: ethBalance, refetch: refetchEthBalance } = useBalance({
-    address: activeAddress,
-  });
+  const activeAddress = walletAddress as `0x${string}` | undefined;
 
-  // Token balance
-  const { data: tokenBalance, refetch: refetchTokenBalance } = useReadContract({
-    address: TOKEN_ADDRESS,
-    abi: ERC20_ABI,
-    functionName: 'balanceOf',
-    args: activeAddress ? [activeAddress] : undefined,
-  });
+  // Fetch balances
+  const fetchBalances = useCallback(async () => {
+    if (!activeAddress) return;
+    try {
+      const { createPublicClient, http } = await import('viem');
+      const client = createPublicClient({ chain: base, transport: http('https://mainnet.base.org') });
 
-  // Token allowance
-  const { data: tokenAllowance, refetch: refetchAllowance } = useReadContract({
-    address: TOKEN_ADDRESS,
-    abi: ERC20_ABI,
-    functionName: 'allowance',
-    args: activeAddress ? [activeAddress, UNISWAP_V3_ROUTER] : undefined,
-  });
+      const [ethBal, tokenBal, allowance] = await Promise.all([
+        client.getBalance({ address: activeAddress }),
+        client.readContract({
+          address: TOKEN_ADDRESS,
+          abi: ERC20_ABI,
+          functionName: 'balanceOf',
+          args: [activeAddress],
+        } as any),
+        client.readContract({
+          address: TOKEN_ADDRESS,
+          abi: ERC20_ABI,
+          functionName: 'allowance',
+          args: [activeAddress, UNISWAP_V3_ROUTER],
+        } as any),
+      ]);
 
-  // Approve transaction
-  const { writeContract: approve, data: approveHash, isPending: isApproving } = useWriteContract();
-  const { isLoading: isApproveConfirming, isSuccess: isApproveSuccess } = useWaitForTransactionReceipt({
-    hash: approveHash,
-  });
+      setEthBalance(formatEther(ethBal));
+      setTokenBalance(tokenBal as bigint);
 
-  // Swap transaction
-  const { writeContract: swap, data: swapHash, isPending: isSwapping } = useWriteContract();
-  const { isLoading: isSwapConfirming, isSuccess: isSwapSuccess } = useWaitForTransactionReceipt({
-    hash: swapHash,
-  });
-
-  // Check if approval is needed when selling tokens
-  useEffect(() => {
-    if (!isBuyMode && inputAmount && tokenAllowance !== undefined) {
-      try {
-        const amountIn = parseUnits(inputAmount || '0', 18);
-        setNeedsApproval(tokenAllowance < amountIn);
-      } catch {
+      // Check approval need
+      if (!isBuyMode && inputAmount) {
+        try {
+          const amountIn = parseUnits(inputAmount, 18);
+          setNeedsApproval((allowance as bigint) < amountIn);
+        } catch {
+          setNeedsApproval(false);
+        }
+      } else {
         setNeedsApproval(false);
       }
-    } else {
-      setNeedsApproval(false);
+    } catch (error) {
+      console.error('Balance fetch error:', error);
     }
-  }, [isBuyMode, inputAmount, tokenAllowance]);
+  }, [activeAddress, isBuyMode, inputAmount]);
 
-  // Handle approval success
   useEffect(() => {
-    if (isApproveSuccess) {
-      toast.success('Approval confirmed!');
-      refetchAllowance();
+    if (isOpen) {
+      fetchBalances();
+      const interval = setInterval(fetchBalances, 10000);
+      return () => clearInterval(interval);
     }
-  }, [isApproveSuccess, refetchAllowance]);
+  }, [isOpen, fetchBalances]);
 
-  // Handle swap success
+  // Re-check approval when input changes
   useEffect(() => {
-    if (isSwapSuccess) {
-      toast.success('Swap completed successfully!');
-      setInputAmount('');
-      setOutputAmount('');
-      // Refetch balances after swap
-      refetchEthBalance();
-      refetchTokenBalance();
-      refetchAllowance();
-      onSwapSuccess?.();
+    if (!isBuyMode && inputAmount && isOpen) {
+      fetchBalances();
     }
-  }, [isSwapSuccess, onSwapSuccess, refetchEthBalance, refetchTokenBalance, refetchAllowance]);
+  }, [inputAmount, isBuyMode, isOpen]);
 
-  // Get real on-chain quote from Uniswap V3 Quoter
+  // Get quote
   const getQuote = useCallback(async (amount: string) => {
     if (!amount || parseFloat(amount) === 0) {
       setOutputAmount('');
       return;
     }
-
     setIsQuoting(true);
     try {
-      const amountIn = isBuyMode
-        ? parseEther(amount)
-        : parseUnits(amount, 18);
-
+      const amountIn = isBuyMode ? parseEther(amount) : parseUnits(amount, 18);
       const tokenIn = isBuyMode ? WETH_ADDRESS : TOKEN_ADDRESS;
       const tokenOut = isBuyMode ? TOKEN_ADDRESS : WETH_ADDRESS;
 
@@ -259,48 +230,66 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
         }],
       });
 
-      const amountOut = result.result[0];
-      const formatted = formatUnits(amountOut, 18);
-      setOutputAmount(formatted);
+      setOutputAmount(formatUnits(result.result[0], 18));
     } catch (error) {
       console.error('Quote error:', error);
       setOutputAmount('');
-      toast.error('Could not fetch quote. The pool may lack liquidity for this amount.');
+      toast.error('Could not fetch quote. Pool may lack liquidity.');
     } finally {
       setIsQuoting(false);
     }
   }, [isBuyMode]);
 
-  // Debounced quote
   useEffect(() => {
-    const timer = setTimeout(() => {
-      getQuote(inputAmount);
-    }, 500);
+    const timer = setTimeout(() => { getQuote(inputAmount); }, 500);
     return () => clearTimeout(timer);
   }, [inputAmount, getQuote]);
 
-  const handleApprove = () => {
-    if (!activeAddress) return;
-    
-    approve({
-      address: TOKEN_ADDRESS,
-      abi: ERC20_ABI,
-      functionName: 'approve',
-      args: [UNISWAP_V3_ROUTER, parseUnits('1000000000', 18)],
-      account: activeAddress,
-      chain: base,
-    });
+  const extractTxHash = (result: any): string => {
+    if (typeof result === 'string') return result;
+    return result?.hash || result?.transactionHash || '';
   };
 
-  const handleSwap = () => {
+  const handleApprove = async () => {
+    if (!activeAddress) return;
+    setIsLoading(true);
+    try {
+      const data = encodeFunctionData({
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [UNISWAP_V3_ROUTER, parseUnits('1000000000', 18)],
+      });
+
+      const result = await sendTransaction(
+        { to: TOKEN_ADDRESS, data, chainId: 8453 },
+        { address: embeddedWalletAddress || activeAddress, sponsor: false, uiOptions: { showWalletUIs: false } }
+      );
+
+      const hash = extractTxHash(result);
+      if (hash) {
+        toast.success('Approval sent! Waiting for confirmation...');
+        // Wait for confirmation
+        const { createPublicClient, http } = await import('viem');
+        const client = createPublicClient({ chain: base, transport: http('https://mainnet.base.org') });
+        await client.waitForTransactionReceipt({ hash: hash as `0x${string}` });
+        toast.success('Approval confirmed!');
+        await fetchBalances();
+      }
+    } catch (error) {
+      console.error('Approve error:', error);
+      toast.error('Approval failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSwap = async () => {
     if (!activeAddress || !inputAmount) return;
+    setIsLoading(true);
 
     try {
-      const amountIn = isBuyMode 
-        ? parseEther(inputAmount)
-        : parseUnits(inputAmount, 18);
-      
-      // Apply slippage to the quoted output amount
+      const amountIn = isBuyMode ? parseEther(inputAmount) : parseUnits(inputAmount, 18);
+
       let minOut = BigInt(0);
       if (outputAmount) {
         const quotedOut = parseUnits(outputAmount, 18);
@@ -309,8 +298,11 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
 
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800);
 
+      let calldata: `0x${string}`;
+      let value: bigint = BigInt(0);
+
       if (isBuyMode) {
-        // ETH -> Token: Use exactInputSingle with ETH value
+        // ETH -> Token
         const swapData = encodeFunctionData({
           abi: SWAP_ROUTER_ABI,
           functionName: 'exactInputSingle',
@@ -319,23 +311,20 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
             tokenOut: TOKEN_ADDRESS,
             fee: POOL_FEE,
             recipient: activeAddress,
-            amountIn: amountIn,
+            amountIn,
             amountOutMinimum: minOut,
             sqrtPriceLimitX96: BigInt(0),
           }],
         });
 
-        swap({
-          address: UNISWAP_V3_ROUTER,
+        calldata = encodeFunctionData({
           abi: SWAP_ROUTER_ABI,
           functionName: 'multicall',
           args: [deadline, [swapData]],
-          value: amountIn,
-          account: activeAddress,
-          chain: base,
         });
+        value = amountIn;
       } else {
-        // Token -> ETH: exactInputSingle then unwrapWETH9
+        // Token -> ETH
         const swapData = encodeFunctionData({
           abi: SWAP_ROUTER_ABI,
           functionName: 'exactInputSingle',
@@ -343,8 +332,8 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
             tokenIn: TOKEN_ADDRESS,
             tokenOut: WETH_ADDRESS,
             fee: POOL_FEE,
-            recipient: UNISWAP_V3_ROUTER, // Send to router for unwrap
-            amountIn: amountIn,
+            recipient: UNISWAP_V3_ROUTER,
+            amountIn,
             amountOutMinimum: minOut,
             sqrtPriceLimitX96: BigInt(0),
           }],
@@ -356,18 +345,38 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
           args: [minOut, activeAddress],
         });
 
-        swap({
-          address: UNISWAP_V3_ROUTER,
+        calldata = encodeFunctionData({
           abi: SWAP_ROUTER_ABI,
           functionName: 'multicall',
           args: [deadline, [swapData, unwrapData]],
-          account: activeAddress,
-          chain: base,
         });
+      }
+
+      const result = await sendTransaction(
+        { to: UNISWAP_V3_ROUTER, data: calldata, value, chainId: 8453 },
+        { address: embeddedWalletAddress || activeAddress, sponsor: false, uiOptions: { showWalletUIs: false } }
+      );
+
+      const hash = extractTxHash(result);
+      if (hash) {
+        setLastTxHash(hash);
+        toast.success('Swap sent! Waiting for confirmation...');
+
+        const { createPublicClient, http } = await import('viem');
+        const client = createPublicClient({ chain: base, transport: http('https://mainnet.base.org') });
+        await client.waitForTransactionReceipt({ hash: hash as `0x${string}` });
+
+        toast.success('Swap completed!');
+        setInputAmount('');
+        setOutputAmount('');
+        await fetchBalances();
+        onSwapSuccess?.();
       }
     } catch (error) {
       console.error('Swap error:', error);
-      toast.error('Failed to initiate swap');
+      toast.error('Swap failed');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -378,21 +387,17 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
   };
 
   const setMaxAmount = () => {
-    if (isBuyMode && ethBalance) {
-      // Leave some ETH for gas
-      const maxEth = Math.max(0, parseFloat(formatEther(ethBalance.value)) - 0.001);
-      setInputAmount(maxEth.toFixed(6));
-    } else if (!isBuyMode && tokenBalance) {
+    if (isBuyMode) {
+      const maxEth = Math.max(0, parseFloat(ethBalance) - 0.001);
+      setInputAmount(maxEth > 0 ? maxEth.toFixed(6) : '0');
+    } else {
       setInputAmount(formatUnits(tokenBalance, 18));
     }
   };
 
-  const isLoading = isApproving || isApproveConfirming || isSwapping || isSwapConfirming;
   const inputToken = isBuyMode ? 'ETH' : '2048';
   const outputToken = isBuyMode ? '2048' : 'ETH';
-  const inputBalance = isBuyMode 
-    ? (ethBalance ? formatEther(ethBalance.value) : '0')
-    : (tokenBalance ? formatUnits(tokenBalance, 18) : '0');
+  const inputBalanceDisplay = isBuyMode ? ethBalance : formatUnits(tokenBalance, 18);
 
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
@@ -416,7 +421,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
         </SheetHeader>
 
         <div className="mt-6">
-          {!isConnected && !activeAddress ? (
+          {!activeAddress ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground font-body">
                 Please connect your wallet to trade
@@ -425,7 +430,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
           ) : (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground font-body text-center">
-                {isBuyMode 
+                {isBuyMode
                   ? 'Buy 2048 tokens with ETH to power your gameplay'
                   : 'Sell your 2048 tokens back to ETH'}
               </p>
@@ -435,7 +440,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">You pay</span>
                   <span className="text-xs text-muted-foreground">
-                    Balance: {parseFloat(inputBalance).toFixed(4)} {inputToken}
+                    Balance: {parseFloat(inputBalanceDisplay).toFixed(4)} {inputToken}
                   </span>
                 </div>
                 <div className="flex gap-2">
@@ -511,11 +516,11 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
                 </div>
               </div>
 
-              {/* Warning for low liquidity */}
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                <AlertCircle className="h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-yellow-500/90">
-                  This swap uses Uniswap V3 on Base. Ensure sufficient liquidity exists for the token pair. Large trades may have significant price impact.
+              {/* Warning */}
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                <AlertCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-destructive/90">
+                  This swap uses Uniswap V3 on Base. Ensure sufficient liquidity exists. Large trades may have significant price impact.
                 </p>
               </div>
 
@@ -526,7 +531,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
                   disabled={isLoading || !inputAmount}
                   className="w-full h-12 text-base font-semibold"
                 >
-                  {isApproving || isApproveConfirming ? (
+                  {isLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Approving...
@@ -541,7 +546,7 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
                   disabled={isLoading || !inputAmount || !outputAmount}
                   className="w-full h-12 text-base font-semibold"
                 >
-                  {isSwapping || isSwapConfirming ? (
+                  {isLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Swapping...
@@ -553,9 +558,9 @@ export function SwapModal({ walletAddress, onSwapSuccess }: SwapModalProps) {
               )}
 
               {/* Transaction Link */}
-              {swapHash && (
+              {lastTxHash && (
                 <a
-                  href={`https://basescan.org/tx/${swapHash}`}
+                  href={`https://basescan.org/tx/${lastTxHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-center gap-1 text-xs text-primary hover:underline"

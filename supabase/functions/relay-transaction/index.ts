@@ -162,7 +162,7 @@ serve(async (req: Request) => {
   } catch (error) {
     console.error("[relay] Error:", error);
     return new Response(
-      JSON.stringify({ error: error.message || "Transaction relay failed" }),
+      JSON.stringify({ error: (error as Error).message || "Transaction relay failed" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
