@@ -159,13 +159,13 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
           abi: ERC20_ABI,
           functionName: 'balanceOf',
           args: [activeAddress],
-        }),
+        } as any),
         client.readContract({
           address: TOKEN_ADDRESS,
           abi: ERC20_ABI,
           functionName: 'allowance',
           args: [activeAddress, UNISWAP_V3_ROUTER],
-        }),
+        } as any),
       ]);
 
       setEthBalance(formatEther(ethBal));
@@ -517,9 +517,9 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
               </div>
 
               {/* Warning */}
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                <AlertCircle className="h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-yellow-500/90">
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                <AlertCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-destructive/90">
                   This swap uses Uniswap V3 on Base. Ensure sufficient liquidity exists. Large trades may have significant price impact.
                 </p>
               </div>

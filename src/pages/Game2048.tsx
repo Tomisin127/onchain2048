@@ -332,6 +332,8 @@ export default function Game2048Page() {
       <SwapModal 
         walletAddress={walletAddr} 
         onSwapSuccess={handleRefreshBalance}
+        sendTransaction={sendTransaction}
+        embeddedWalletAddress={embeddedWalletAddress}
       />
       
       <div className="max-w-lg mx-auto space-y-4 animate-fade-in">
