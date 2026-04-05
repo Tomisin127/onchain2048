@@ -498,6 +498,18 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
   const outputToken = isBuyMode ? '2048' : 'ETH';
   const inputBalanceDisplay = isBuyMode ? ethBalance : formatUnits(tokenBalance, 18);
 
+  // Check if input amount exceeds balance
+  const hasInsufficientBalance = (() => {
+    if (!inputAmount || parseFloat(inputAmount) === 0) return false;
+    try {
+      const inputValue = parseFloat(inputAmount);
+      const balanceValue = parseFloat(inputBalanceDisplay);
+      return inputValue > balanceValue;
+    } catch {
+      return false;
+    }
+  })();
+
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetTrigger asChild>
@@ -611,11 +623,18 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
               </div>
 
 
+              {/* Insufficient Balance Warning */}
+              {hasInsufficientBalance && (
+                <div className="text-sm text-destructive text-center font-medium">
+                  Insufficient {inputToken} balance
+                </div>
+              )}
+
               {/* Action Buttons */}
               {needsApproval ? (
                 <Button
                   onClick={handleApprove}
-                  disabled={isLoading || !inputAmount}
+                  disabled={isLoading || !inputAmount || hasInsufficientBalance}
                   className="w-full h-12 text-base font-semibold"
                 >
                   {isLoading ? (
@@ -630,7 +649,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
               ) : (
                 <Button
                   onClick={handleSwap}
-                  disabled={isLoading || !inputAmount || !outputAmount}
+                  disabled={isLoading || !inputAmount || !outputAmount || hasInsufficientBalance}
                   className="w-full h-12 text-base font-semibold"
                 >
                   {isLoading ? (
@@ -638,6 +657,8 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Swapping...
                     </>
+                  ) : hasInsufficientBalance ? (
+                    `Insufficient ${inputToken} balance`
                   ) : (
                     `Swap ${inputToken} for ${outputToken}`
                   )}
