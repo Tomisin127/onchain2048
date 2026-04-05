@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeftRight, ArrowDownUp, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
+import { ArrowLeftRight, ArrowDownUp, Loader2, ExternalLink } from 'lucide-react';
 import { parseEther, formatEther, parseUnits, formatUnits, encodeFunctionData } from 'viem';
 import { base } from 'wagmi/chains';
 import { Button } from '@/components/ui/button';
