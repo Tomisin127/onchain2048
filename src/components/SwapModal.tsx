@@ -138,6 +138,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
   const [isQuoting, setIsQuoting] = useState(false);
   const [needsApproval, setNeedsApproval] = useState(false);
   const [slippage, setSlippage] = useState(5);
+  const [bestFee, setBestFee] = useState<number>(10000);
   const [isLoading, setIsLoading] = useState(false);
   const [lastTxHash, setLastTxHash] = useState('');
   const [ethBalance, setEthBalance] = useState('0');
