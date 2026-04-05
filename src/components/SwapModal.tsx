@@ -330,7 +330,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
           args: [{
             tokenIn: WETH_ADDRESS,
             tokenOut: TOKEN_ADDRESS,
-            fee: POOL_FEE,
+            fee: bestFee,
             recipient: activeAddress,
             amountIn,
             amountOutMinimum: minOut,
