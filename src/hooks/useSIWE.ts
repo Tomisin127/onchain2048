@@ -93,6 +93,7 @@ export function useSIWE() {
 
         // Sign the message
         const signature = await signMessageAsync({
+          account: address as `0x${string}`,
           message,
         });
 
