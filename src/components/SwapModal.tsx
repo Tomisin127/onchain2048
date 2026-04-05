@@ -352,7 +352,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
           args: [{
             tokenIn: TOKEN_ADDRESS,
             tokenOut: WETH_ADDRESS,
-            fee: POOL_FEE,
+            fee: bestFee,
             recipient: UNISWAP_V3_ROUTER,
             amountIn,
             amountOutMinimum: minOut,
