@@ -409,10 +409,11 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
 
   const setMaxAmount = () => {
     if (isBuyMode) {
-      const maxEth = Math.max(0, parseFloat(ethBalance) - 0.001);
+      const maxEth = Math.max(0, parseFloat(ethBalance) * 0.9);
       setInputAmount(maxEth > 0 ? maxEth.toFixed(6) : '0');
     } else {
-      setInputAmount(formatUnits(tokenBalance, 18));
+      const maxTokens = (tokenBalance * BigInt(90)) / BigInt(100);
+      setInputAmount(formatUnits(maxTokens, 18));
     }
   };
 
