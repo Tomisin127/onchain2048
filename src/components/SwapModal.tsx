@@ -218,24 +218,44 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
       const { createPublicClient, http } = await import('viem');
       const client = createPublicClient({ chain: base, transport: http('https://mainnet.base.org') });
 
-      const result = await client.simulateContract({
-        address: UNISWAP_V3_QUOTER,
-        abi: QUOTER_ABI,
-        functionName: 'quoteExactInputSingle',
-        args: [{
-          tokenIn,
-          tokenOut,
-          amountIn,
-          fee: POOL_FEE,
-          sqrtPriceLimitX96: BigInt(0),
-        }],
-      });
+      let bestOutput = BigInt(0);
+      let foundFee = POOL_FEES[0];
 
-      setOutputAmount(formatUnits(result.result[0], 18));
+      for (const fee of POOL_FEES) {
+        try {
+          const result = await client.simulateContract({
+            address: UNISWAP_V3_QUOTER,
+            abi: QUOTER_ABI,
+            functionName: 'quoteExactInputSingle',
+            args: [{
+              tokenIn,
+              tokenOut,
+              amountIn,
+              fee,
+              sqrtPriceLimitX96: BigInt(0),
+            }],
+          });
+          const out = result.result[0];
+          if (out > bestOutput) {
+            bestOutput = out;
+            foundFee = fee;
+          }
+        } catch {
+          // This fee tier has no pool or no liquidity, skip
+        }
+      }
+
+      if (bestOutput > BigInt(0)) {
+        setOutputAmount(formatUnits(bestOutput, 18));
+        setBestFee(foundFee);
+      } else {
+        setOutputAmount('');
+        toast.error('No liquidity found for this pair.');
+      }
     } catch (error) {
       console.error('Quote error:', error);
       setOutputAmount('');
-      toast.error('Could not fetch quote. Pool may lack liquidity.');
+      toast.error('Could not fetch quote.');
     } finally {
       setIsQuoting(false);
     }
