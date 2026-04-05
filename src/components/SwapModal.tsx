@@ -451,11 +451,6 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
             </div>
           ) : (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground font-body text-center">
-                {isBuyMode
-                  ? 'Buy 2048 tokens with ETH to power your gameplay'
-                  : 'Sell your 2048 tokens back to ETH'}
-              </p>
 
               {/* Input Section */}
               <div className="bg-card/50 rounded-xl p-4 border border-border/50 space-y-3">
