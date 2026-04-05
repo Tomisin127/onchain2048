@@ -169,13 +169,13 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
       ]);
 
       setEthBalance(formatEther(ethBal));
-      setTokenBalance(tokenBal);
+      setTokenBalance(tokenBal as bigint);
 
       // Check approval need
       if (!isBuyMode && inputAmount) {
         try {
           const amountIn = parseUnits(inputAmount, 18);
-          setNeedsApproval(allowance < amountIn);
+          setNeedsApproval((allowance as bigint) < amountIn);
         } catch {
           setNeedsApproval(false);
         }
