@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 const TOKEN_ADDRESS = '0xa27567af20caff5747869a493c8a6a7444b20f9c' as const;
 const WETH_ADDRESS = '0x4200000000000000000000000000000000000006' as const;
 const UNISWAP_V3_QUOTER = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a' as const;
+const UNISWAP_V3_QUOTER_V2 = '0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6' as const; // Legacy quoter fallback
 const UNISWAP_V3_ROUTER = '0x2626664c2603336E57B271c5C0b26F421741e481' as const;
 
 const POOL_FEES = [10000, 3000, 500, 100] as const;
@@ -76,6 +77,23 @@ const QUOTER_ABI = [
       { name: 'initializedTicksCrossed', type: 'uint32' },
       { name: 'gasEstimate', type: 'uint256' },
     ],
+  },
+] as const;
+
+// Legacy QuoterV2 ABI (simpler interface, sometimes more reliable)
+const QUOTER_V2_ABI = [
+  {
+    name: 'quoteExactInputSingle',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'tokenIn', type: 'address' },
+      { name: 'tokenOut', type: 'address' },
+      { name: 'fee', type: 'uint24' },
+      { name: 'amountIn', type: 'uint256' },
+      { name: 'sqrtPriceLimitX96', type: 'uint160' },
+    ],
+    outputs: [{ name: 'amountOut', type: 'uint256' }],
   },
 ] as const;
 
@@ -203,7 +221,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
     }
   }, [inputAmount, isBuyMode, isOpen]);
 
-  // Get quote
+  // Get quote using eth_call (more reliable for quoter)
   const getQuote = useCallback(async (amount: string) => {
     if (!amount || parseFloat(amount) === 0) {
       setOutputAmount('');
@@ -215,16 +233,16 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
       const tokenIn = isBuyMode ? WETH_ADDRESS : TOKEN_ADDRESS;
       const tokenOut = isBuyMode ? TOKEN_ADDRESS : WETH_ADDRESS;
 
-      const { createPublicClient, http } = await import('viem');
+      const { createPublicClient, http, encodeFunctionData: encodeData, decodeFunctionResult } = await import('viem');
       const client = createPublicClient({ chain: base, transport: http('https://mainnet.base.org') });
 
       let bestOutput = BigInt(0);
       let foundFee: number = POOL_FEES[0];
 
-      for (const fee of POOL_FEES) {
+      // Try all fee tiers in parallel for faster response
+      const quotePromises = POOL_FEES.map(async (fee) => {
         try {
-          const result = await client.simulateContract({
-            address: UNISWAP_V3_QUOTER,
+          const callData = encodeData({
             abi: QUOTER_ABI,
             functionName: 'quoteExactInputSingle',
             args: [{
@@ -235,13 +253,72 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
               sqrtPriceLimitX96: BigInt(0),
             }],
           });
-          const out = result.result[0];
-          if (out > bestOutput) {
-            bestOutput = out;
-            foundFee = fee;
+
+          const result = await client.call({
+            to: UNISWAP_V3_QUOTER,
+            data: callData,
+          });
+
+          if (result.data) {
+            const decoded = decodeFunctionResult({
+              abi: QUOTER_ABI,
+              functionName: 'quoteExactInputSingle',
+              data: result.data,
+            });
+            return { fee, output: decoded[0] as bigint };
           }
+          return null;
         } catch {
-          // This fee tier has no pool or no liquidity, skip
+          // This fee tier has no pool or no liquidity
+          return null;
+        }
+      });
+
+      const results = await Promise.all(quotePromises);
+      
+      for (const result of results) {
+        if (result && result.output > bestOutput) {
+          bestOutput = result.output;
+          foundFee = result.fee;
+        }
+      }
+
+      // If no results from main quoter, try legacy quoter
+      if (bestOutput === BigInt(0)) {
+        const legacyPromises = POOL_FEES.map(async (fee) => {
+          try {
+            const callData = encodeData({
+              abi: QUOTER_V2_ABI,
+              functionName: 'quoteExactInputSingle',
+              args: [tokenIn, tokenOut, fee, amountIn, BigInt(0)],
+            });
+
+            const result = await client.call({
+              to: UNISWAP_V3_QUOTER_V2,
+              data: callData,
+            });
+
+            if (result.data) {
+              const decoded = decodeFunctionResult({
+                abi: QUOTER_V2_ABI,
+                functionName: 'quoteExactInputSingle',
+                data: result.data,
+              });
+              return { fee, output: decoded as bigint };
+            }
+            return null;
+          } catch {
+            return null;
+          }
+        });
+
+        const legacyResults = await Promise.all(legacyPromises);
+        
+        for (const result of legacyResults) {
+          if (result && result.output > bestOutput) {
+            bestOutput = result.output;
+            foundFee = result.fee;
+          }
         }
       }
 
