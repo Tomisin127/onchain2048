@@ -584,12 +584,6 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
                 </a>
               )}
 
-              {/* Info Footer */}
-              <div className="text-xs text-muted-foreground/70 text-center space-y-1 font-mono pt-4 border-t border-border/30">
-                <p>Token: {TOKEN_ADDRESS.slice(0, 6)}...{TOKEN_ADDRESS.slice(-4)}</p>
-                <p>Network: Base Mainnet</p>
-                <p>DEX: Uniswap V3</p>
-              </div>
             </div>
           )}
         </div>
