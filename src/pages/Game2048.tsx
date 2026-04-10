@@ -42,6 +42,7 @@ export default function Game2048Page() {
     connect: selfPayConnect,
     disconnect: selfPayDisconnect,
     sendTransaction: selfPaySendTx,
+    mode: selfPayMode,
   } = useSelfPayWallet();
 
   const {
@@ -257,33 +258,62 @@ export default function Game2048Page() {
         return;
       }
 
-      // Self-Pay Wallet: user pays gas, builder code in data
+      // Self-Pay Wallet: Two modes
+      // 1. Pay-per-move: Payment must succeed FIRST, then move happens
+      // 2. Advanced relay: Optimistic move with background tx
       if (isUsingSelfPay) {
-        const result = gameMakeMove(direction);
-        if (!result.moved) {
+        const isAdvancedMode = selfPayMode === 'advanced-relay';
+        
+        if (isAdvancedMode) {
+          // Advanced mode: Optimistic move with silent background tx
+          const result = gameMakeMove(direction);
+          if (!result.moved) {
+            setIsProcessing(false);
+            return;
+          }
+
+          playMoveSound();
+          checkMilestones();
+          setOptimisticMovesUsed(prev => prev + 1);
+
+          void (async () => {
+            try {
+              const txHash = await selfPaySendTx(moveCostWei);
+              if (txHash) {
+                setPendingTransactions(prev => [...prev, txHash]);
+                console.log('✅ Advanced relay tx sent:', txHash);
+              }
+            } catch (error) {
+              console.error('❌ Advanced relay transaction failed:', error);
+              setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
+            }
+          })();
+
           setIsProcessing(false);
           return;
-        }
-
-        playMoveSound();
-        checkMilestones();
-        setOptimisticMovesUsed(prev => prev + 1);
-
-        void (async () => {
+        } else {
+          // Pay-per-move mode: Payment FIRST, then move
           try {
             const txHash = await selfPaySendTx(moveCostWei);
             if (txHash) {
               setPendingTransactions(prev => [...prev, txHash]);
-              console.log('✅ Self-pay tx sent:', txHash);
+              console.log('✅ Pay-per-move tx confirmed:', txHash);
+              
+              // Payment successful - now make the move
+              const result = gameMakeMove(direction);
+              if (result.moved) {
+                playMoveSound();
+                checkMilestones();
+              }
             }
           } catch (error) {
-            console.error('❌ Self-pay transaction failed:', error);
-            setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
+            console.error('❌ Pay-per-move transaction failed:', error);
+            // Don't make the move if payment failed
           }
-        })();
 
-        setIsProcessing(false);
-        return;
+          setIsProcessing(false);
+          return;
+        }
       }
 
       alert('Please connect a wallet first!');
@@ -339,7 +369,11 @@ export default function Game2048Page() {
   const isConnected = authenticated || isBaseConnected || isSelfPayConnected;
   const walletAddr = embeddedWalletAddress || baseAddress || selfPayAddress || '';
   const { displayName: baseDisplayName } = useBaseName(walletAddr);
-  const connectionType = authenticated ? 'Privy Email' : isSelfPayConnected ? 'Self-Pay Wallet' : 'Base Wallet';
+  const connectionType = authenticated 
+    ? 'Privy Email' 
+    : isSelfPayConnected 
+      ? (selfPayMode === 'advanced-relay' ? 'Self-Pay (Advanced)' : 'Self-Pay (Per Move)')
+      : 'Base Wallet';
   const userDisplay = user?.email?.address || baseDisplayName || 'Connected';
 
   if (!ready) {
@@ -358,7 +392,13 @@ export default function Game2048Page() {
           await baseConnect(params ? { allowanceEth: params.allowanceEth, durationDays: params.durationDays } : undefined);
         }}
         onSelfPayConnect={async (params?: SpendPermissionValues) => {
-          await selfPayConnect(params ? { allowanceEth: params.allowanceEth, durationDays: params.durationDays, relayerAddress: params.relayerAddress } : undefined);
+          await selfPayConnect(params ? { 
+            allowanceEth: params.allowanceEth, 
+            durationDays: params.durationDays, 
+            relayerAddress: params.relayerAddress,
+            relayerPrivateKey: params.relayerPrivateKey,
+            useAdvancedMode: params.useAdvancedMode,
+          } : undefined);
         }}
         isBaseConnecting={isBaseConnecting}
         isSelfPayConnecting={isSelfPayConnecting}
