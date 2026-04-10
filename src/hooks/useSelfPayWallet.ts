@@ -1,14 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { base } from 'viem/chains';
-import { encodeFunctionData, parseAbi } from 'viem';
-import { Attribution } from 'ox/erc8021';
+import { parseAbi } from 'viem';
+import { supabase } from '@/integrations/supabase/client';
 
 const SPEND_PERMISSION_MANAGER = '0xf85210B21cC50302F477BA56686d2019dC9b67Ad';
 const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
-
-// ERC-8021 attribution suffix using ox library
-const ERC_8021_SUFFIX_RAW = Attribution.toDataSuffix({ codes: ['bc_dh0rqw67'] });
-const ERC_8021_SUFFIX = ERC_8021_SUFFIX_RAW.startsWith('0x') ? ERC_8021_SUFFIX_RAW.slice(2) : ERC_8021_SUFFIX_RAW;
 
 const SPEND_PERMISSION_TYPES = {
   SpendPermission: [
@@ -96,17 +92,35 @@ export function useSelfPayWallet() {
       console.log('[self-pay] Connected:', primaryAddr);
       setAddress(primaryAddr);
 
-      // Build spend permission where spender = the player's own address
+      // Get relayer address from backend
+      let relayerAddr = '';
+      try {
+        const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction');
+        if (invokeError) throw invokeError;
+        relayerAddr = data?.spenderAddress;
+        console.log('[self-pay] Relayer address:', relayerAddr);
+      } catch (err) {
+        console.error('[self-pay] Failed to get relayer address:', err);
+        throw new Error('Cannot retrieve relayer address');
+      }
+
+      if (!relayerAddr) {
+        throw new Error('No relayer address returned');
+      }
+
+      // Build spend permission where:
+      // - account = player's address (the one being charged)
+      // - spender = relayer's address (pays fees on behalf of player)
       const now = Math.floor(Date.now() / 1000);
       const allowanceEth = permissionParams?.allowanceEth || '1';
       const durationDays = permissionParams?.durationDays || 30;
       const allowanceWei = BigInt(Math.floor(parseFloat(allowanceEth) * 1e18)).toString();
 
-      console.log('[self-pay] Spend permission config:', { allowanceEth, durationDays, spender: primaryAddr });
+      console.log('[self-pay] Spend permission config:', { allowanceEth, durationDays, account: primaryAddr, spender: relayerAddr });
 
       const permission: SpendPermission = {
         account: primaryAddr,
-        spender: primaryAddr, // Player is their own spender
+        spender: relayerAddr, // Relayer is the spender (pays for everything)
         token: NATIVE_TOKEN_ADDRESS,
         allowance: allowanceWei,
         period: 86400,
@@ -166,49 +180,42 @@ export function useSelfPayWallet() {
     setSpendSignature('');
   }, []);
 
-  // Each move: call spend() on SpendPermissionManager (silent - no wallet popup)
+  // Each move: relay through backend (completely silent, no wallet popup)
   const sendTransaction = useCallback(
     async (valueWei: bigint): Promise<string> => {
-      if (!provider || !address || !spendPermission || !spendSignature) {
+      if (!spendPermission || !spendSignature) {
         throw new Error('Wallet not connected or spend permission not signed');
       }
 
-      const permissionTuple = {
-        account: spendPermission.account as `0x${string}`,
-        spender: spendPermission.spender as `0x${string}`,
-        token: spendPermission.token as `0x${string}`,
-        allowance: BigInt(spendPermission.allowance),
-        period: spendPermission.period,
-        start: spendPermission.start,
-        end: spendPermission.end,
-        salt: BigInt(spendPermission.salt),
-        extraData: (spendPermission.extraData || '0x') as `0x${string}`,
-      };
+      console.log('[self-pay] Sending transaction via relayer...', { value: valueWei.toString() });
 
-      // Single call: spend() with signed permission
-      // The SpendPermissionManager verifies the signature on-chain, no separate approval needed
-      const spendData = encodeFunctionData({
-        abi: spendPermissionManagerAbi,
-        functionName: 'spend',
-        args: [permissionTuple, valueWei],
-      });
-      const spendDataWithAttribution = (spendData + ERC_8021_SUFFIX) as `0x${string}`;
-
-      console.log('[self-pay] Sending spend() tx...', { value: valueWei.toString() });
-
-      const txHash = await provider.request({
-        method: 'eth_sendTransaction',
-        params: [{
-          from: address,
-          to: SPEND_PERMISSION_MANAGER,
-          data: spendDataWithAttribution,
-        }],
+      const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction', {
+        body: {
+          permission: spendPermission,
+          signature: spendSignature,
+          amount: valueWei.toString(),
+        },
       });
 
-      console.log('[self-pay] ✅ spend tx:', txHash);
+      if (invokeError) {
+        console.error('[self-pay] Relayer invoke error:', invokeError);
+        throw new Error(invokeError.message || 'Transaction relay failed');
+      }
+
+      if (data?.error) {
+        console.error('[self-pay] Relayer returned error:', data.error);
+        throw new Error(data.error);
+      }
+
+      const txHash = data?.txHashes?.[data.txHashes.length - 1] || '';
+      if (!txHash) {
+        throw new Error('Transaction sent but tx hash was missing');
+      }
+
+      console.log('[self-pay] ✅ Transaction via relayer:', txHash);
       return txHash as string;
     },
-    [provider, address, spendPermission, spendSignature]
+    [spendPermission, spendSignature]
   );
 
   return {
