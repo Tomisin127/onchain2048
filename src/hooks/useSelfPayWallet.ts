@@ -54,7 +54,6 @@ export function useSelfPayWallet() {
   const [error, setError] = useState('');
   const [spendPermission, setSpendPermission] = useState<SpendPermission | null>(null);
   const [spendSignature, setSpendSignature] = useState('');
-  const [permissionApproved, setPermissionApproved] = useState(false);
   const initAttempted = useRef(false);
 
   // Detect provider
@@ -149,7 +148,6 @@ export function useSelfPayWallet() {
       console.log('[self-pay] ✅ Spend permission signed!');
       setSpendPermission(permission);
       setSpendSignature(signature as string);
-      setPermissionApproved(false);
       setConnected(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -166,10 +164,9 @@ export function useSelfPayWallet() {
     setError('');
     setSpendPermission(null);
     setSpendSignature('');
-    setPermissionApproved(false);
   }, []);
 
-  // Each move: user's wallet calls approveWithSignature (once) then spend() on SpendPermissionManager
+  // Each move: call spend() on SpendPermissionManager (silent - no wallet popup)
   const sendTransaction = useCallback(
     async (valueWei: bigint): Promise<string> => {
       if (!provider || !address || !spendPermission || !spendSignature) {
@@ -188,29 +185,8 @@ export function useSelfPayWallet() {
         extraData: (spendPermission.extraData || '0x') as `0x${string}`,
       };
 
-      // First call: approve the permission on-chain if not yet done
-      if (!permissionApproved) {
-        console.log('[self-pay] Approving spend permission on-chain...');
-        const approveData = encodeFunctionData({
-          abi: spendPermissionManagerAbi,
-          functionName: 'approveWithSignature',
-          args: [permissionTuple, spendSignature as `0x${string}`],
-        });
-        const approveDataWithAttribution = (approveData + ERC_8021_SUFFIX) as `0x${string}`;
-
-        const approveHash = await provider.request({
-          method: 'eth_sendTransaction',
-          params: [{
-            from: address,
-            to: SPEND_PERMISSION_MANAGER,
-            data: approveDataWithAttribution,
-          }],
-        });
-        console.log('[self-pay] ✅ approveWithSignature tx:', approveHash);
-        setPermissionApproved(true);
-      }
-
-      // Call spend() — user pays gas, builder code in calldata
+      // Single call: spend() with signed permission
+      // The SpendPermissionManager verifies the signature on-chain, no separate approval needed
       const spendData = encodeFunctionData({
         abi: spendPermissionManagerAbi,
         functionName: 'spend',
@@ -232,7 +208,7 @@ export function useSelfPayWallet() {
       console.log('[self-pay] ✅ spend tx:', txHash);
       return txHash as string;
     },
-    [provider, address, spendPermission, spendSignature, permissionApproved]
+    [provider, address, spendPermission, spendSignature]
   );
 
   return {
