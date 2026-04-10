@@ -357,8 +357,8 @@ export default function Game2048Page() {
         onBaseWalletConnect={async (params?: SpendPermissionValues) => {
           await baseConnect(params ? { allowanceEth: params.allowanceEth, durationDays: params.durationDays } : undefined);
         }}
-        onSelfPayConnect={async () => {
-          await selfPayConnect();
+        onSelfPayConnect={async (params?: SpendPermissionValues) => {
+          await selfPayConnect(params ? { allowanceEth: params.allowanceEth, durationDays: params.durationDays } : undefined);
         }}
         isBaseConnecting={isBaseConnecting}
         isSelfPayConnecting={isSelfPayConnecting}
