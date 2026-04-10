@@ -391,6 +391,5 @@ export function useSelfPayWallet() {
     mode,
     hasSpendPermission: mode === 'advanced-relay' && !!spendPermission && !!spendSignature,
     payPerMoveRecipient: PAY_PER_MOVE_RECIPIENT,
-    moveCost: formatEther(MOVE_COST_WEI),
   };
 }
