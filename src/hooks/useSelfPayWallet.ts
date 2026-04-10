@@ -1,14 +1,71 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { base } from 'viem/chains';
-import { createWalletClient, http, parseEther, formatEther } from 'viem';
+import { createWalletClient, createPublicClient, http, parseEther, formatEther, encodeFunctionData } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
 // Payment recipient address for pay-per-move mode
 const PAY_PER_MOVE_RECIPIENT = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
-const MOVE_COST_WEI = parseEther('0.0001'); // Cost per move
 
 const SPEND_PERMISSION_MANAGER = '0xf85210B21cC50302F477BA56686d2019dC9b67Ad';
 const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+
+// Public client for balance checks
+const publicClient = createPublicClient({
+  chain: base,
+  transport: http(),
+});
+
+// ABI for spend permission manager
+const spendPermissionManagerAbi = [
+  {
+    name: 'approveWithSignature',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      {
+        name: 'permission',
+        type: 'tuple',
+        components: [
+          { name: 'account', type: 'address' },
+          { name: 'spender', type: 'address' },
+          { name: 'token', type: 'address' },
+          { name: 'allowance', type: 'uint160' },
+          { name: 'period', type: 'uint48' },
+          { name: 'start', type: 'uint48' },
+          { name: 'end', type: 'uint48' },
+          { name: 'salt', type: 'uint256' },
+          { name: 'extraData', type: 'bytes' },
+        ],
+      },
+      { name: 'signature', type: 'bytes' },
+    ],
+    outputs: [],
+  },
+  {
+    name: 'spend',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      {
+        name: 'permission',
+        type: 'tuple',
+        components: [
+          { name: 'account', type: 'address' },
+          { name: 'spender', type: 'address' },
+          { name: 'token', type: 'address' },
+          { name: 'allowance', type: 'uint160' },
+          { name: 'period', type: 'uint48' },
+          { name: 'start', type: 'uint48' },
+          { name: 'end', type: 'uint48' },
+          { name: 'salt', type: 'uint256' },
+          { name: 'extraData', type: 'bytes' },
+        ],
+      },
+      { name: 'value', type: 'uint160' },
+    ],
+    outputs: [],
+  },
+] as const;
 
 const SPEND_PERMISSION_TYPES = {
   SpendPermission: [
@@ -59,6 +116,7 @@ export function useSelfPayWallet() {
   const [spendSignature, setSpendSignature] = useState('');
   const [relayerClient, setRelayerClient] = useState<any>(null);
   const [relayerAddress, setRelayerAddress] = useState('');
+  const [permissionApproved, setPermissionApproved] = useState(false);
   
   const initAttempted = useRef(false);
 
@@ -211,6 +269,7 @@ export function useSelfPayWallet() {
     setSpendSignature('');
     setRelayerClient(null);
     setRelayerAddress('');
+    setPermissionApproved(false);
   }, []);
 
   // Send transaction - handles both modes
@@ -222,24 +281,87 @@ export function useSelfPayWallet() {
 
       if (mode === 'advanced-relay') {
         // Advanced mode: Use custom relayer for silent transactions
-        if (!relayerClient || !spendPermission || !spendSignature) {
+        if (!relayerClient || !spendPermission || !spendSignature || !relayerAddress) {
           throw new Error('Advanced relay not properly configured');
         }
 
-        console.log('[self-pay] Advanced mode: Sending optimistic transaction...');
+        // Check relayer balance first
+        const relayerBalance = await publicClient.getBalance({ 
+          address: relayerAddress as `0x${string}` 
+        });
+        
+        // Need enough for gas (estimate ~0.0001 ETH for gas) + the value
+        const estimatedGas = parseEther('0.0001');
+        if (relayerBalance < estimatedGas) {
+          throw new Error('Relayer wallet has insufficient balance for gas fees');
+        }
 
-        // The relayer wallet sends the transaction (silent, no popup)
-        const txHash = await relayerClient.sendTransaction({
-          to: SPEND_PERMISSION_MANAGER,
-          value: valueWei,
-          data: '0x', // Simple transfer for now
+        console.log('[self-pay] Advanced mode: Sending transaction via relayer...');
+
+        const permissionTuple = {
+          account: spendPermission.account as `0x${string}`,
+          spender: spendPermission.spender as `0x${string}`,
+          token: spendPermission.token as `0x${string}`,
+          allowance: BigInt(spendPermission.allowance),
+          period: spendPermission.period,
+          start: spendPermission.start,
+          end: spendPermission.end,
+          salt: BigInt(spendPermission.salt),
+          extraData: (spendPermission.extraData || '0x') as `0x${string}`,
+        };
+
+        // First transaction: approve the permission if not already approved
+        if (!permissionApproved) {
+          console.log('[self-pay] Approving spend permission on-chain...');
+          
+          const approveData = encodeFunctionData({
+            abi: spendPermissionManagerAbi,
+            functionName: 'approveWithSignature',
+            args: [permissionTuple, spendSignature as `0x${string}`],
+          });
+
+          const approveHash = await relayerClient.sendTransaction({
+            to: SPEND_PERMISSION_MANAGER as `0x${string}`,
+            data: approveData,
+          });
+
+          console.log('[self-pay] Permission approved:', approveHash);
+          
+          // Wait for confirmation
+          await publicClient.waitForTransactionReceipt({ hash: approveHash });
+          setPermissionApproved(true);
+        }
+
+        // Now call spend() to transfer the value
+        const spendData = encodeFunctionData({
+          abi: spendPermissionManagerAbi,
+          functionName: 'spend',
+          args: [permissionTuple, valueWei],
         });
 
-        console.log('[self-pay] Advanced mode tx:', txHash);
+        const txHash = await relayerClient.sendTransaction({
+          to: SPEND_PERMISSION_MANAGER as `0x${string}`,
+          data: spendData,
+        });
+
+        console.log('[self-pay] Advanced mode spend tx:', txHash);
         return txHash;
       } else {
         // Pay-per-move mode: User pays directly with wallet popup
         console.log('[self-pay] Pay-per-move: Requesting payment...');
+        
+        // Check user balance first
+        const userBalance = await publicClient.getBalance({ 
+          address: address as `0x${string}` 
+        });
+        
+        // Need enough for value + gas (estimate ~0.0001 ETH for gas)
+        const estimatedGas = parseEther('0.00005');
+        const totalNeeded = valueWei + estimatedGas;
+        
+        if (userBalance < totalNeeded) {
+          throw new Error(`Insufficient balance. You need at least ${formatEther(totalNeeded)} ETH`);
+        }
 
         // Send payment to the recipient address
         const txHash = await provider.request({
@@ -247,7 +369,7 @@ export function useSelfPayWallet() {
           params: [{
             from: address,
             to: PAY_PER_MOVE_RECIPIENT,
-            value: '0x' + MOVE_COST_WEI.toString(16),
+            value: '0x' + valueWei.toString(16),
           }],
         });
 
@@ -255,7 +377,7 @@ export function useSelfPayWallet() {
         return txHash as string;
       }
     },
-    [provider, address, mode, relayerClient, spendPermission, spendSignature]
+    [provider, address, mode, relayerClient, relayerAddress, spendPermission, spendSignature, permissionApproved]
   );
 
   return {
