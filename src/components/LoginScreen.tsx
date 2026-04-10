@@ -8,15 +8,21 @@ const MOVE_COST_USD = 0.0001;
 interface LoginScreenProps {
   onEmailLogin: () => void;
   onBaseWalletConnect: (params?: SpendPermissionValues) => Promise<void>;
+  onSelfPayConnect: () => Promise<void>;
   isBaseConnecting: boolean;
+  isSelfPayConnecting: boolean;
   baseWalletError?: string;
+  selfPayError?: string;
 }
 
 export function LoginScreen({
   onEmailLogin,
   onBaseWalletConnect,
+  onSelfPayConnect,
   isBaseConnecting,
+  isSelfPayConnecting,
   baseWalletError = '',
+  selfPayError = '',
 }: LoginScreenProps) {
   const [connectionError, setConnectionError] = useState('');
   const [showSpendConfig, setShowSpendConfig] = useState(false);
@@ -37,7 +43,17 @@ export function LoginScreen({
     }
   };
 
-  const displayError = connectionError || baseWalletError;
+  const handleSelfPay = async () => {
+    setConnectionError('');
+    try {
+      await onSelfPayConnect();
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      setConnectionError(errorMsg);
+    }
+  };
+
+  const displayError = connectionError || baseWalletError || selfPayError;
 
   if (showSpendConfig) {
     return (
@@ -113,7 +129,27 @@ export function LoginScreen({
           >
             {isBaseConnecting ? 'Connecting...' : 'Connect Base Wallet'}
           </Button>
-          <p className="text-xs text-muted-foreground">One-time approval, then seamless play</p>
+          <p className="text-xs text-muted-foreground">Fees managed by the game · Sign once, play silently</p>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border"></div>
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-card px-2 text-muted-foreground">OR</span>
+            </div>
+          </div>
+
+          <Button
+            onClick={handleSelfPay}
+            className="w-full bg-secondary text-secondary-foreground hover:bg-muted font-display"
+            size="lg"
+            variant="outline"
+            disabled={isSelfPayConnecting}
+          >
+            {isSelfPayConnecting ? 'Connecting...' : 'Connect Wallet (Self-Pay)'}
+          </Button>
+          <p className="text-xs text-muted-foreground">You pay gas fees · Approve each move from your wallet</p>
         </div>
       </Card>
     </div>
