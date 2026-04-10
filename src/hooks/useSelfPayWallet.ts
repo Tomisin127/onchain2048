@@ -176,17 +176,17 @@ export function useSelfPayWallet() {
         throw new Error('Wallet not connected or spend permission not signed');
       }
 
-      const permissionTuple = [
-        spendPermission.account,
-        spendPermission.spender,
-        spendPermission.token,
-        BigInt(spendPermission.allowance),
-        spendPermission.period,
-        spendPermission.start,
-        spendPermission.end,
-        BigInt(spendPermission.salt),
-        spendPermission.extraData,
-      ] as const;
+      const permissionTuple = {
+        account: spendPermission.account as `0x${string}`,
+        spender: spendPermission.spender as `0x${string}`,
+        token: spendPermission.token as `0x${string}`,
+        allowance: BigInt(spendPermission.allowance),
+        period: spendPermission.period,
+        start: spendPermission.start,
+        end: spendPermission.end,
+        salt: BigInt(spendPermission.salt),
+        extraData: (spendPermission.extraData || '0x') as `0x${string}`,
+      };
 
       // First call: approve the permission on-chain if not yet done
       if (!permissionApproved) {
