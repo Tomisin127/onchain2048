@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { encodeFunctionData, parseAbi } from 'viem';
+import { Attribution } from 'ox/erc8021';
 
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
 
-// ERC-8021 builder attribution suffix (bc_dh0rqw67)
-// We manually encode: magic bytes 802180218021 + builder code
-const BUILDER_CODE_SUFFIX = '626f746833300000000000000000000000000000000000000000000000000000802180218021';
+// ERC-8021 attribution suffix using ox library (includes magic bytes 802180218021)
+const ERC_8021_SUFFIX_RAW = Attribution.toDataSuffix({ codes: ['bc_dh0rqw67'] });
+const ERC_8021_SUFFIX = ERC_8021_SUFFIX_RAW.startsWith('0x') ? ERC_8021_SUFFIX_RAW.slice(2) : ERC_8021_SUFFIX_RAW;
 
 export function useSelfPayWallet() {
   const [provider, setProvider] = useState<any>(null);
@@ -81,8 +81,8 @@ export function useSelfPayWallet() {
 
       const valueHex = '0x' + valueWei.toString(16);
 
-      // Builder code attribution as data suffix
-      const data = '0x' + BUILDER_CODE_SUFFIX;
+      // Builder code attribution via ox ERC-8021 library
+      const data = '0x' + ERC_8021_SUFFIX;
 
       console.log('[self-pay] Sending tx with builder code attribution:', {
         from: address,
