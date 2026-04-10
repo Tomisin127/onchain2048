@@ -252,11 +252,27 @@ export function useBaseSubAccount() {
         throw new Error('Silent mode is not active. Please reconnect and approve spend permission.');
       }
 
+      // Validate spend permission is properly configured
+      if (!spendPermission.account || !spendPermission.spender) {
+        throw new Error('Spend permission is missing account or spender address.');
+      }
+
       if (spendPermission.token.toLowerCase() === ZERO_ADDRESS) {
         throw new Error('Outdated spend permission detected. Please disconnect and reconnect.');
       }
 
-      console.log('[v0] Using backend relayer for silent transaction...');
+      // Verify the permission is still valid (not expired)
+      const now = Math.floor(Date.now() / 1000);
+      if (now > spendPermission.end) {
+        throw new Error('Spend permission has expired. Please disconnect and reconnect.');
+      }
+
+      console.log('[v0] Using backend relayer for silent transaction...', {
+        account: spendPermission.account,
+        spender: spendPermission.spender,
+        amount: valueWei.toString(),
+      });
+
       const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction', {
         body: {
           permission: spendPermission,
@@ -272,6 +288,10 @@ export function useBaseSubAccount() {
 
       if (data?.error) {
         console.error('[v0] Relayer returned error:', data.error);
+        // Check if it's an insufficient funds error from the relayer
+        if (data.error.includes('insufficient') || data.error.includes('balance')) {
+          throw new Error('Relayer has insufficient funds. The game operator needs to fund the relayer wallet.');
+        }
         throw new Error(data.error);
       }
 
