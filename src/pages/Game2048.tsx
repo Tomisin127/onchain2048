@@ -281,10 +281,14 @@ export default function Game2048Page() {
               const txHash = await selfPaySendTx(moveCostWei);
               if (txHash) {
                 setPendingTransactions(prev => [...prev, txHash]);
-                console.log('✅ Advanced relay tx sent:', txHash);
+                console.log('Advanced relay tx sent:', txHash);
               }
             } catch (error) {
-              console.error('❌ Advanced relay transaction failed:', error);
+              console.error('Advanced relay transaction failed:', error);
+              const errorMsg = error instanceof Error ? error.message : String(error);
+              if (errorMsg.includes('Insufficient') || errorMsg.includes('insufficient')) {
+                alert('Relayer wallet has insufficient balance. Please add funds to your relayer wallet.');
+              }
               setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
             }
           })();
@@ -297,7 +301,7 @@ export default function Game2048Page() {
             const txHash = await selfPaySendTx(moveCostWei);
             if (txHash) {
               setPendingTransactions(prev => [...prev, txHash]);
-              console.log('✅ Pay-per-move tx confirmed:', txHash);
+              console.log('Pay-per-move tx sent:', txHash);
               
               // Payment successful - now make the move
               const result = gameMakeMove(direction);
@@ -307,7 +311,11 @@ export default function Game2048Page() {
               }
             }
           } catch (error) {
-            console.error('❌ Pay-per-move transaction failed:', error);
+            console.error('Pay-per-move transaction failed:', error);
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            if (errorMsg.includes('Insufficient') || errorMsg.includes('insufficient')) {
+              alert('Insufficient balance to make a move. Please add funds to your wallet.');
+            }
             // Don't make the move if payment failed
           }
 

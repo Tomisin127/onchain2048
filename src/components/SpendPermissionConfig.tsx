@@ -128,9 +128,6 @@ export function SpendPermissionConfig({
                 <p className="text-xs text-muted-foreground font-body">
                   Confirm and pay for each move via your wallet. Simple and secure.
                 </p>
-                <p className="text-[10px] text-muted-foreground font-mono">
-                  Payment goes to: 0xEA54...5249
-                </p>
               </div>
             </div>
           </div>
