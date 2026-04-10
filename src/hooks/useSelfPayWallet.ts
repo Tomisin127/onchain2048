@@ -2,9 +2,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { base } from 'viem/chains';
 import { createWalletClient, createPublicClient, http, parseEther, formatEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { Attribution } from 'ox/erc8021';
 
 // Payment recipient address for pay-per-move mode
 const PAY_PER_MOVE_RECIPIENT = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
+
+// ERC-8021 builder attribution
+const BUILDER_CODE = 'bc_dh0rqw67';
+const getAttributionData = () => Attribution.toDataSuffix({ codes: [BUILDER_CODE] });
 
 // Public client for balance checks
 const publicClient = createPublicClient({
@@ -135,6 +140,9 @@ export function useSelfPayWallet() {
   // Send transaction - handles both modes
   const sendTransaction = useCallback(
     async (valueWei: bigint): Promise<string> => {
+      // Get builder attribution data
+      const attributionData = getAttributionData();
+      
       if (mode === 'advanced-relay') {
         // Advanced mode: Use custom relayer for silent direct transfer
         if (!relayerClient || !relayerAddress) {
@@ -154,10 +162,11 @@ export function useSelfPayWallet() {
           throw new Error(`Insufficient relayer balance. Need ${formatEther(totalNeeded)} ETH, have ${formatEther(relayerBalance)} ETH`);
         }
 
-        // Simple direct transfer from relayer wallet to the game recipient
+        // Direct transfer from relayer wallet to the game recipient with builder code
         const txHash = await relayerClient.sendTransaction({
           to: PAY_PER_MOVE_RECIPIENT as `0x${string}`,
           value: valueWei,
+          data: attributionData as `0x${string}`,
         });
 
         return txHash;
@@ -180,13 +189,14 @@ export function useSelfPayWallet() {
           throw new Error(`Insufficient balance. Need ${formatEther(totalNeeded)} ETH, have ${formatEther(userBalance)} ETH`);
         }
 
-        // Send payment to the recipient address - this will trigger wallet popup
+        // Send payment to the recipient address with builder code - this will trigger wallet popup
         const txHash = await provider.request({
           method: 'eth_sendTransaction',
           params: [{
             from: address,
             to: PAY_PER_MOVE_RECIPIENT,
             value: '0x' + valueWei.toString(16),
+            data: attributionData,
           }],
         });
 
