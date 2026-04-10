@@ -35,6 +35,16 @@ export default function Game2048Page() {
   } = useBaseSubAccount();
 
   const {
+    address: selfPayAddress,
+    connected: isSelfPayConnected,
+    isConnecting: isSelfPayConnecting,
+    error: selfPayError,
+    connect: selfPayConnect,
+    disconnect: selfPayDisconnect,
+    sendTransaction: selfPaySendTx,
+  } = useSelfPayWallet();
+
+  const {
     tiles,
     score,
     highScore,
