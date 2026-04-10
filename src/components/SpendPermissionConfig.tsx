@@ -51,15 +51,16 @@ export function SpendPermissionConfig({
       return;
     }
     
-    // Validate relayer address if provided
-    if (isForSelfPay && relayerAddress && !/^0x[a-fA-F0-9]{40}$/.test(relayerAddress)) {
+    // Trim and validate relayer address if provided
+    const trimmedRelayerAddress = relayerAddress.trim();
+    if (isForSelfPay && trimmedRelayerAddress && !/^0x[a-fA-F0-9]{40}$/.test(trimmedRelayerAddress)) {
       return;
     }
     
     onConfirm({
       allowanceEth,
       durationDays: parseInt(durationDays),
-      relayerAddress: isForSelfPay ? relayerAddress : undefined,
+      relayerAddress: isForSelfPay && trimmedRelayerAddress ? trimmedRelayerAddress : undefined,
     });
   };
 
@@ -193,7 +194,7 @@ export function SpendPermissionConfig({
         <Button
           onClick={handleConfirm}
           className="flex-1 gradient-btn text-foreground font-display font-semibold"
-          disabled={isConnecting || !allowanceEth || parseFloat(allowanceEth) <= 0 || (isForSelfPay && relayerAddress && !/^0x[a-fA-F0-9]{40}$/.test(relayerAddress))}
+          disabled={isConnecting || !allowanceEth || parseFloat(allowanceEth) <= 0 || (isForSelfPay && relayerAddress.trim() && !/^0x[a-fA-F0-9]{40}$/.test(relayerAddress.trim()))}
         >
           {isConnecting ? 'Connecting...' : 'Connect & Approve'}
         </Button>

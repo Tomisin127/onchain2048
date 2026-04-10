@@ -96,21 +96,24 @@ export function useSelfPayWallet() {
       // Use custom relayer address if provided, otherwise fetch from backend
       let relayerAddr = permissionParams?.relayerAddress;
       
-      if (!relayerAddr) {
+      console.log('[self-pay] Relayer address param:', relayerAddr);
+      
+      if (!relayerAddr || relayerAddr.trim() === '') {
+        console.log('[self-pay] No relayer address provided, attempting to fetch from backend...');
         try {
           const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction');
           if (invokeError) throw invokeError;
           relayerAddr = data?.spenderAddress;
           console.log('[self-pay] Auto-detected relayer address:', relayerAddr);
         } catch (err) {
-          console.error('[self-pay] Failed to get relayer address:', err);
+          console.error('[self-pay] Failed to auto-detect relayer address:', err);
           throw new Error('Cannot retrieve relayer address. Please provide one manually.');
         }
       } else {
-        console.log('[self-pay] Using custom relayer address:', relayerAddr);
+        console.log('[self-pay] Using provided relayer address:', relayerAddr);
       }
 
-      if (!relayerAddr) {
+      if (!relayerAddr || relayerAddr.trim() === '') {
         throw new Error('No relayer address available');
       }
 
