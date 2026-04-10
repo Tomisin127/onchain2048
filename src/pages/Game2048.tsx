@@ -94,7 +94,7 @@ export default function Game2048Page() {
 
   // Fetch wallet balance
   const fetchBalance = useCallback(async () => {
-    const addr = embeddedWalletAddress || baseAddress;
+    const addr = embeddedWalletAddress || baseAddress || selfPayAddress;
     if (!addr) return;
     try {
       const provider = new ethers.JsonRpcProvider('https://mainnet.base.org');
@@ -107,7 +107,7 @@ export default function Game2048Page() {
     } catch (error) {
       console.error('Error fetching balance:', error);
     }
-  }, [embeddedWalletAddress, baseAddress, ethPrice]);
+  }, [embeddedWalletAddress, baseAddress, selfPayAddress, ethPrice]);
 
   useEffect(() => {
     fetchBalance();
@@ -145,6 +145,7 @@ export default function Game2048Page() {
 
     const isUsingPrivy = authenticated && wallets.length > 0;
     const isUsingBase = isBaseConnected && baseAddress;
+    const isUsingSelfPay = isSelfPayConnected && selfPayAddress;
     const actualMoves = remainingMoves - optimisticMovesUsed;
 
     if (actualMoves <= 3) {
@@ -256,6 +257,35 @@ export default function Game2048Page() {
         return;
       }
 
+      // Self-Pay Wallet: user pays gas, builder code in data
+      if (isUsingSelfPay) {
+        const result = gameMakeMove(direction);
+        if (!result.moved) {
+          setIsProcessing(false);
+          return;
+        }
+
+        playMoveSound();
+        checkMilestones();
+        setOptimisticMovesUsed(prev => prev + 1);
+
+        void (async () => {
+          try {
+            const txHash = await selfPaySendTx(moveCostWei);
+            if (txHash) {
+              setPendingTransactions(prev => [...prev, txHash]);
+              console.log('✅ Self-pay tx sent:', txHash);
+            }
+          } catch (error) {
+            console.error('❌ Self-pay transaction failed:', error);
+            setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
+          }
+        })();
+
+        setIsProcessing(false);
+        return;
+      }
+
       alert('Please connect a wallet first!');
     } catch (error) {
       console.error('Transaction failed:', error);
@@ -306,10 +336,10 @@ export default function Game2048Page() {
     setTouchStart(null);
   };
 
-  const isConnected = authenticated || isBaseConnected;
-  const walletAddr = embeddedWalletAddress || baseAddress || '';
+  const isConnected = authenticated || isBaseConnected || isSelfPayConnected;
+  const walletAddr = embeddedWalletAddress || baseAddress || selfPayAddress || '';
   const { displayName: baseDisplayName } = useBaseName(walletAddr);
-  const connectionType = authenticated ? 'Privy Email' : 'Base Wallet';
+  const connectionType = authenticated ? 'Privy Email' : isSelfPayConnected ? 'Self-Pay Wallet' : 'Base Wallet';
   const userDisplay = user?.email?.address || baseDisplayName || 'Connected';
 
   if (!ready) {
@@ -327,14 +357,20 @@ export default function Game2048Page() {
         onBaseWalletConnect={async (params?: SpendPermissionValues) => {
           await baseConnect(params ? { allowanceEth: params.allowanceEth, durationDays: params.durationDays } : undefined);
         }}
+        onSelfPayConnect={async () => {
+          await selfPayConnect();
+        }}
         isBaseConnecting={isBaseConnecting}
+        isSelfPayConnecting={isSelfPayConnecting}
         baseWalletError={baseWalletError}
+        selfPayError={selfPayError}
       />
     );
   }
 
   const handleDisconnect = () => {
     if (authenticated) logout();
+    else if (isSelfPayConnected) selfPayDisconnect();
     else if (isBaseConnected) baseDisconnect();
   };
 
