@@ -160,11 +160,10 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
   // Helper to create a client with fallback RPCs
   const createClientWithFallback = useCallback(async () => {
     const { createPublicClient, http, fallback } = await import('viem');
+    const transports = BASE_RPC_URLS.map(url => http(url, { timeout: 10000, retryCount: 1 }));
     return createPublicClient({ 
       chain: base, 
-      transport: fallback(
-        BASE_RPC_URLS.map(url => http(url, { timeout: 10000, retryCount: 1 }))
-      )
+      transport: fallback(transports) as any,
     });
   }, []);
 
