@@ -73,7 +73,6 @@ export function useSelfPayWallet() {
       if (!accounts?.length) throw new Error('No accounts returned');
 
       const primaryAddr = accounts[0];
-      console.log('[self-pay] Connected:', primaryAddr);
       setAddress(primaryAddr);
 
       // Determine mode
@@ -106,26 +105,12 @@ export function useSelfPayWallet() {
           transport: http(),
         });
 
-        // Check relayer has some balance
-        const relayerBalance = await publicClient.getBalance({ 
-          address: customRelayerAddress as `0x${string}` 
-        });
-        
-        console.log('[v0] Advanced mode setup - Relayer balance:', formatEther(relayerBalance), 'ETH');
-        
-        if (relayerBalance < parseEther('0.0001')) {
-          throw new Error(`Relayer wallet has very low balance (${formatEther(relayerBalance)} ETH). Please fund it before playing.`);
-        }
-
         setRelayerClient(client);
         setRelayerAddress(customRelayerAddress);
         setMode('advanced-relay');
-        
-        console.log('[v0] Advanced mode: Relayer configured successfully');
       } else {
         // Pay-per-move mode: Simple setup
         setMode('pay-per-move');
-        console.log('[self-pay] Pay-per-move mode enabled');
       }
 
       setConnected(true);
@@ -150,12 +135,9 @@ export function useSelfPayWallet() {
   // Send transaction - handles both modes
   const sendTransaction = useCallback(
     async (valueWei: bigint): Promise<string> => {
-      console.log('[v0] sendTransaction called with mode:', mode, 'valueWei:', valueWei.toString());
-      
       if (mode === 'advanced-relay') {
         // Advanced mode: Use custom relayer for silent direct transfer
         if (!relayerClient || !relayerAddress) {
-          console.error('[v0] Advanced relay missing:', { relayerClient: !!relayerClient, relayerAddress });
           throw new Error('Advanced relay not properly configured');
         }
 
@@ -164,17 +146,13 @@ export function useSelfPayWallet() {
           address: relayerAddress as `0x${string}` 
         });
         
-        console.log('[v0] Relayer balance:', formatEther(relayerBalance), 'ETH');
-        
         // Need enough for gas + the value being sent
         const estimatedGas = parseEther('0.00005');
         const totalNeeded = valueWei + estimatedGas;
         
         if (relayerBalance < totalNeeded) {
-          throw new Error(`Relayer wallet has insufficient balance. Need ${formatEther(totalNeeded)} ETH, have ${formatEther(relayerBalance)} ETH`);
+          throw new Error(`Insufficient relayer balance. Need ${formatEther(totalNeeded)} ETH, have ${formatEther(relayerBalance)} ETH`);
         }
-
-        console.log('[v0] Advanced mode: Sending direct transfer from relayer to recipient...');
 
         // Simple direct transfer from relayer wallet to the game recipient
         const txHash = await relayerClient.sendTransaction({
@@ -182,40 +160,27 @@ export function useSelfPayWallet() {
           value: valueWei,
         });
 
-        console.log('[v0] Advanced mode tx sent:', txHash);
         return txHash;
       } else {
         // Pay-per-move mode: User pays directly with wallet popup
         if (!provider || !address) {
-          console.error('[v0] Pay-per-move missing:', { provider: !!provider, address });
           throw new Error('Wallet not connected');
         }
-        
-        console.log('[v0] Pay-per-move: Checking balance...');
         
         // Check user balance first
         const userBalance = await publicClient.getBalance({ 
           address: address as `0x${string}` 
         });
         
-        console.log('[v0] User balance:', formatEther(userBalance), 'ETH');
-        
         // Need enough for value + gas
         const estimatedGas = parseEther('0.00005');
         const totalNeeded = valueWei + estimatedGas;
         
         if (userBalance < totalNeeded) {
-          throw new Error(`Insufficient balance. You need at least ${formatEther(totalNeeded)} ETH, you have ${formatEther(userBalance)} ETH`);
+          throw new Error(`Insufficient balance. Need ${formatEther(totalNeeded)} ETH, have ${formatEther(userBalance)} ETH`);
         }
 
-        console.log('[v0] Pay-per-move: Requesting wallet transaction...', {
-          from: address,
-          to: PAY_PER_MOVE_RECIPIENT,
-          value: valueWei.toString(),
-          valueHex: '0x' + valueWei.toString(16),
-        });
-
-        // Send payment to the recipient address
+        // Send payment to the recipient address - this will trigger wallet popup
         const txHash = await provider.request({
           method: 'eth_sendTransaction',
           params: [{
@@ -225,7 +190,6 @@ export function useSelfPayWallet() {
           }],
         });
 
-        console.log('[v0] Pay-per-move tx sent:', txHash);
         return txHash as string;
       }
     },
