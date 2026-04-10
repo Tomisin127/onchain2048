@@ -175,30 +175,24 @@ export function useSelfPayWallet() {
         if (!provider || !address) {
           throw new Error('Wallet not connected');
         }
-        
-        // Check user balance first
-        const userBalance = await publicClient.getBalance({ 
-          address: address as `0x${string}` 
-        });
-        
-        // Need enough for value + gas
-        const estimatedGas = parseEther('0.00005');
-        const totalNeeded = valueWei + estimatedGas;
-        
-        if (userBalance < totalNeeded) {
-          throw new Error(`Insufficient balance. Need ${formatEther(totalNeeded)} ETH, have ${formatEther(userBalance)} ETH`);
-        }
 
         // Send payment to the recipient address with builder code - this will trigger wallet popup
+        // Let the wallet handle balance/gas validation instead of pre-checking
+        const txParams = {
+          from: address,
+          to: PAY_PER_MOVE_RECIPIENT,
+          value: '0x' + valueWei.toString(16),
+          data: attributionData,
+        };
+
         const txHash = await provider.request({
           method: 'eth_sendTransaction',
-          params: [{
-            from: address,
-            to: PAY_PER_MOVE_RECIPIENT,
-            value: '0x' + valueWei.toString(16),
-            data: attributionData,
-          }],
+          params: [txParams],
         });
+
+        if (!txHash) {
+          throw new Error('Transaction was not submitted');
+        }
 
         return txHash as string;
       }

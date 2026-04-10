@@ -219,8 +219,8 @@ export function SpendPermissionConfig({
         </div>
       )}
 
-      {/* Allowance - Only show for non-self-pay OR advanced mode */}
-      {(!isForSelfPay || useAdvancedMode) && (
+      {/* Allowance - Only show for non-self-pay (Base Wallet spend permission) */}
+      {!isForSelfPay && (
         <div className="space-y-2">
           <Label className="text-sm font-body text-secondary-foreground">
             Max allowance per period (ETH)
@@ -283,8 +283,8 @@ export function SpendPermissionConfig({
         </div>
       )}
 
-      {/* Duration - Only show for non-self-pay OR advanced mode */}
-      {(!isForSelfPay || useAdvancedMode) && (
+      {/* Duration - Only show for non-self-pay (Base Wallet spend permission) */}
+      {!isForSelfPay && (
         <div className="space-y-2">
           <Label className="text-sm font-body text-secondary-foreground">Permission duration</Label>
           <Select value={durationDays} onValueChange={setDurationDays}>
@@ -304,17 +304,22 @@ export function SpendPermissionConfig({
 
       {/* Summary */}
       <div className="bg-secondary/50 rounded-lg p-3 space-y-1">
-        {isForSelfPay && !useAdvancedMode ? (
-          <p className="text-xs text-muted-foreground font-body">
-            You will be prompted to approve and pay for each move. The game will wait for your confirmation before proceeding.
-          </p>
+        {isForSelfPay ? (
+          useAdvancedMode ? (
+            <p className="text-xs text-muted-foreground font-body">
+              Your relayer wallet will pay for moves silently. Transactions are optimistic - moves happen instantly while payments process in the background.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground font-body">
+              You will be prompted to approve and pay for each move. The game will wait for your confirmation before proceeding.
+            </p>
+          )
         ) : (
           <p className="text-xs text-muted-foreground font-body">
             The game will be able to spend up to{' '}
             <span className="text-foreground font-mono font-semibold">{allowanceEth} ETH</span> per
             day for{' '}
             <span className="text-foreground font-mono font-semibold">{durationDays} days</span>.
-            {useAdvancedMode && ' Transactions will be silent and optimistic.'}
           </p>
         )}
       </div>
@@ -334,9 +339,9 @@ export function SpendPermissionConfig({
           className={`flex-1 font-display font-semibold ${
             useAdvancedMode ? 'bg-amber-500 hover:bg-amber-600 text-black' : 'gradient-btn text-foreground'
           }`}
-          disabled={isConnecting || !allowanceEth || parseFloat(allowanceEth) <= 0 || (isForSelfPay && useAdvancedMode && !isAdvancedValid)}
+          disabled={isConnecting || (!isForSelfPay && (!allowanceEth || parseFloat(allowanceEth) <= 0)) || (isForSelfPay && useAdvancedMode && !isAdvancedValid)}
         >
-          {isConnecting ? 'Connecting...' : (isForSelfPay && !useAdvancedMode ? 'Connect Wallet' : 'Connect & Approve')}
+          {isConnecting ? 'Connecting...' : (isForSelfPay ? (useAdvancedMode ? 'Setup Relayer' : 'Connect Wallet') : 'Connect & Approve')}
         </Button>
       </div>
     </Card>
