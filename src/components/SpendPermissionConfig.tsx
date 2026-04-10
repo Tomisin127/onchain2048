@@ -14,12 +14,14 @@ import {
 export interface SpendPermissionValues {
   allowanceEth: string;
   durationDays: number;
+  relayerAddress?: string;
 }
 
 interface SpendPermissionConfigProps {
   onConfirm: (values: SpendPermissionValues) => void;
   onCancel: () => void;
   isConnecting: boolean;
+  isForSelfPay?: boolean;
 }
 
 const DURATION_OPTIONS = [
@@ -36,19 +38,28 @@ export function SpendPermissionConfig({
   onConfirm,
   onCancel,
   isConnecting,
+  isForSelfPay = false,
 }: SpendPermissionConfigProps) {
   const [allowanceEth, setAllowanceEth] = useState('0.1');
   const [durationDays, setDurationDays] = useState('30');
   const [customAllowance, setCustomAllowance] = useState(false);
+  const [relayerAddress, setRelayerAddress] = useState('');
 
   const handleConfirm = () => {
     const parsed = parseFloat(allowanceEth);
     if (isNaN(parsed) || parsed <= 0 || parsed > 10) {
       return;
     }
+    
+    // Validate relayer address if provided
+    if (isForSelfPay && relayerAddress && !/^0x[a-fA-F0-9]{40}$/.test(relayerAddress)) {
+      return;
+    }
+    
     onConfirm({
       allowanceEth,
       durationDays: parseInt(durationDays),
+      relayerAddress: isForSelfPay ? relayerAddress : undefined,
     });
   };
 
@@ -140,6 +151,25 @@ export function SpendPermissionConfig({
         </Select>
       </div>
 
+      {/* Relayer Address (Self-Pay only) */}
+      {isForSelfPay && (
+        <div className="space-y-2">
+          <Label className="text-sm font-body text-secondary-foreground">
+            Relayer Address (Optional)
+          </Label>
+          <Input
+            type="text"
+            value={relayerAddress}
+            onChange={(e) => setRelayerAddress(e.target.value)}
+            className="font-mono text-sm bg-secondary border-border text-foreground"
+            placeholder="0x... (if empty, will auto-detect)"
+          />
+          <p className="text-xs text-muted-foreground font-body">
+            If provided, this wallet address will pay gas fees on your behalf. Leave empty to use the default.
+          </p>
+        </div>
+      )}
+
       {/* Summary */}
       <div className="bg-secondary/50 rounded-lg p-3 space-y-1">
         <p className="text-xs text-muted-foreground font-body">
@@ -163,7 +193,7 @@ export function SpendPermissionConfig({
         <Button
           onClick={handleConfirm}
           className="flex-1 gradient-btn text-foreground font-display font-semibold"
-          disabled={isConnecting || !allowanceEth || parseFloat(allowanceEth) <= 0}
+          disabled={isConnecting || !allowanceEth || parseFloat(allowanceEth) <= 0 || (isForSelfPay && relayerAddress && !/^0x[a-fA-F0-9]{40}$/.test(relayerAddress))}
         >
           {isConnecting ? 'Connecting...' : 'Connect & Approve'}
         </Button>

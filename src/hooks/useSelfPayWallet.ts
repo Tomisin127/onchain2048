@@ -40,6 +40,7 @@ interface SpendPermission {
 export interface SelfPayPermissionParams {
   allowanceEth: string;
   durationDays: number;
+  relayerAddress?: string;
 }
 
 export function useSelfPayWallet() {
@@ -92,20 +93,25 @@ export function useSelfPayWallet() {
       console.log('[self-pay] Connected:', primaryAddr);
       setAddress(primaryAddr);
 
-      // Get relayer address from backend
-      let relayerAddr = '';
-      try {
-        const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction');
-        if (invokeError) throw invokeError;
-        relayerAddr = data?.spenderAddress;
-        console.log('[self-pay] Relayer address:', relayerAddr);
-      } catch (err) {
-        console.error('[self-pay] Failed to get relayer address:', err);
-        throw new Error('Cannot retrieve relayer address');
+      // Use custom relayer address if provided, otherwise fetch from backend
+      let relayerAddr = permissionParams?.relayerAddress;
+      
+      if (!relayerAddr) {
+        try {
+          const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction');
+          if (invokeError) throw invokeError;
+          relayerAddr = data?.spenderAddress;
+          console.log('[self-pay] Auto-detected relayer address:', relayerAddr);
+        } catch (err) {
+          console.error('[self-pay] Failed to get relayer address:', err);
+          throw new Error('Cannot retrieve relayer address. Please provide one manually.');
+        }
+      } else {
+        console.log('[self-pay] Using custom relayer address:', relayerAddr);
       }
 
       if (!relayerAddr) {
-        throw new Error('No relayer address returned');
+        throw new Error('No relayer address available');
       }
 
       // Build spend permission where:

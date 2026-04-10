@@ -69,6 +69,7 @@ export function LoginScreen({
             onConfirm={handleSpendConfirm}
             onCancel={() => setSpendConfigFor(null)}
             isConnecting={isConfigConnecting}
+            isForSelfPay={spendConfigFor === 'selfpay'}
           />
         </div>
       </div>
