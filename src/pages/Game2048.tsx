@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
 import { useBaseSubAccount } from '@/hooks/useBaseSubAccount';
+import { useSelfPayWallet } from '@/hooks/useSelfPayWallet';
 import type { SpendPermissionValues } from '@/components/SpendPermissionConfig';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
