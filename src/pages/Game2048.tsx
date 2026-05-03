@@ -35,13 +35,14 @@ export default function Game2048Page() {
   } = useBaseSubAccount();
 
   const {
-    address: selfPayAddress,
+    activeAddress: selfPayAddress,
     connected: isSelfPayConnected,
     isConnecting: isSelfPayConnecting,
     error: selfPayError,
     connect: selfPayConnect,
     disconnect: selfPayDisconnect,
     sendTransaction: selfPaySendTx,
+    sendArbitraryTransaction: selfPaySendArbitraryTx,
     mode: selfPayMode,
   } = useSelfPayWallet();
 
@@ -95,7 +96,11 @@ export default function Game2048Page() {
 
   // Fetch wallet balance
   const fetchBalance = useCallback(async () => {
-    const addr = embeddedWalletAddress || baseAddress || selfPayAddress;
+    // Match the walletAddr priority so the displayed balance always matches the
+    // wallet shown on screen (especially the self-pay relayer in advanced mode).
+    const addr = isSelfPayConnected
+      ? selfPayAddress
+      : embeddedWalletAddress || baseAddress || selfPayAddress;
     if (!addr) return;
     try {
       const provider = new ethers.JsonRpcProvider('https://mainnet.base.org');
@@ -108,7 +113,7 @@ export default function Game2048Page() {
     } catch (error) {
       console.error('Error fetching balance:', error);
     }
-  }, [embeddedWalletAddress, baseAddress, selfPayAddress, ethPrice]);
+  }, [embeddedWalletAddress, baseAddress, selfPayAddress, isSelfPayConnected, ethPrice]);
 
   useEffect(() => {
     fetchBalance();
@@ -375,7 +380,33 @@ export default function Game2048Page() {
   };
 
   const isConnected = authenticated || isBaseConnected || isSelfPayConnected;
-  const walletAddr = embeddedWalletAddress || baseAddress || selfPayAddress || '';
+  // Prioritize the self-pay wallet when active, since that's the wallet the user
+  // explicitly logged in with (and in advanced mode it's the relayer that holds funds).
+  const walletAddr = isSelfPayConnected
+    ? selfPayAddress
+    : embeddedWalletAddress || baseAddress || selfPayAddress || '';
+
+  // Unified sendTransaction for the SwapModal so swaps use whichever wallet is active.
+  // - Self-pay (advanced or pay-per-move): route through the self-pay wallet
+  // - Privy embedded: use Privy's sendTransaction (default)
+  // - Base wallet: fall back to Privy's sendTransaction signature (existing behavior)
+  const swapSendTransaction = useCallback(
+    async (
+      params: { to: string; value?: bigint; data?: string; chainId?: number },
+      options?: any
+    ) => {
+      if (isSelfPayConnected) {
+        const txHash = await selfPaySendArbitraryTx({
+          to: params.to,
+          value: params.value,
+          data: params.data,
+        });
+        return txHash;
+      }
+      return sendTransaction(params as any, options);
+    },
+    [isSelfPayConnected, selfPaySendArbitraryTx, sendTransaction]
+  );
   const { displayName: baseDisplayName } = useBaseName(walletAddr);
   const connectionType = authenticated 
     ? 'Privy Email' 
@@ -427,8 +458,10 @@ export default function Game2048Page() {
       <SwapModal 
         walletAddress={walletAddr} 
         onSwapSuccess={handleRefreshBalance}
-        sendTransaction={sendTransaction}
-        embeddedWalletAddress={embeddedWalletAddress}
+        sendTransaction={swapSendTransaction}
+        // Only pass the Privy embedded wallet when Privy is the active connection.
+        // For self-pay we leave this empty so the swap signs from the self-pay wallet.
+        embeddedWalletAddress={isSelfPayConnected ? '' : embeddedWalletAddress}
       />
       
       <div className="max-w-lg mx-auto space-y-4 animate-fade-in">
