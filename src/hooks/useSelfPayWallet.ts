@@ -200,14 +200,82 @@ export function useSelfPayWallet() {
     [provider, address, mode, relayerClient, relayerAddress]
   );
 
+  // Generic transaction sender for arbitrary calls (e.g. token approvals, swaps)
+  // Routes through the relayer in advanced mode, or the browser wallet in pay-per-move mode
+  const sendArbitraryTransaction = useCallback(
+    async (params: { to: string; value?: bigint; data?: string }): Promise<string> => {
+      if (mode === 'advanced-relay') {
+        if (!relayerClient || !relayerAddress) {
+          throw new Error('Advanced relay not properly configured');
+        }
+
+        const value = params.value ?? BigInt(0);
+
+        // Pre-check balance for clearer errors
+        const relayerBalance = await publicClient.getBalance({
+          address: relayerAddress as `0x${string}`,
+        });
+        const estimatedGas = parseEther('0.0005'); // bigger buffer for swap-style txs
+        if (relayerBalance < value + estimatedGas) {
+          throw new Error(
+            `Insufficient relayer balance. Need ~${formatEther(value + estimatedGas)} ETH, have ${formatEther(relayerBalance)} ETH`
+          );
+        }
+
+        const txHash = await relayerClient.sendTransaction({
+          to: params.to as `0x${string}`,
+          value,
+          data: (params.data ?? '0x') as `0x${string}`,
+        });
+
+        return txHash;
+      } else {
+        if (!provider || !address) {
+          throw new Error('Wallet not connected');
+        }
+
+        const txParams: Record<string, string> = {
+          from: address,
+          to: params.to,
+        };
+        if (params.value && params.value > BigInt(0)) {
+          txParams.value = '0x' + params.value.toString(16);
+        }
+        if (params.data) {
+          txParams.data = params.data;
+        }
+
+        const txHash = await provider.request({
+          method: 'eth_sendTransaction',
+          params: [txParams],
+        });
+
+        if (!txHash) {
+          throw new Error('Transaction was not submitted');
+        }
+
+        return txHash as string;
+      }
+    },
+    [provider, address, mode, relayerClient, relayerAddress]
+  );
+
+  // The address that should be considered the user's "self-pay wallet"
+  // - In advanced mode, this is the relayer (the wallet that actually holds funds and signs)
+  // - In pay-per-move mode, this is the browser wallet
+  const activeAddress = mode === 'advanced-relay' ? relayerAddress : address;
+
   return {
     address,
+    activeAddress,
+    relayerAddress,
     connected,
     isConnecting,
     error,
     connect,
     disconnect,
     sendTransaction,
+    sendArbitraryTransaction,
     mode,
     hasRelayer: mode === 'advanced-relay' && !!relayerClient,
     payPerMoveRecipient: PAY_PER_MOVE_RECIPIENT,
