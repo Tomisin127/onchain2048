@@ -216,13 +216,24 @@ export function useSelfPayWallet() {
   // Routes through the relayer in advanced mode, or the browser wallet in pay-per-move mode
   const sendArbitraryTransaction = useCallback(
     async (params: { to: string; value?: bigint; data?: string }): Promise<string> => {
+      // Append the ERC-8021 builder attribution suffix to the calldata so swaps
+      // (and other arbitrary calls) are credited to our builder code on Base.
+      // The suffix is trailing data the target contract ignores but indexers read.
+      const attributionSuffix = getAttributionData(); // "0x..."
+      const baseData = (params.data ?? '0x') as `0x${string}`;
+      const dataWithAttribution = (
+        baseData === '0x'
+          ? attributionSuffix
+          : (baseData + attributionSuffix.slice(2))
+      ) as `0x${string}`;
+
       if (mode === 'advanced-relay') {
         if (!relayerClient || !relayerAddress) {
           throw new Error('Advanced relay not properly configured');
         }
 
         const value = params.value ?? BigInt(0);
-        const data = (params.data ?? '0x') as `0x${string}`;
+        const data = dataWithAttribution;
         const to = params.to as `0x${string}`;
 
         // Pre-flight: simulate the call so we surface revert reasons clearly
@@ -292,12 +303,12 @@ export function useSelfPayWallet() {
         const txParams: Record<string, string> = {
           from: address,
           to: params.to,
+          // Always include the attribution-suffixed data so the builder code
+          // is attached to swaps signed via the browser wallet too.
+          data: dataWithAttribution,
         };
         if (params.value && params.value > BigInt(0)) {
           txParams.value = '0x' + params.value.toString(16);
-        }
-        if (params.data) {
-          txParams.data = params.data;
         }
 
         const txHash = await provider.request({
