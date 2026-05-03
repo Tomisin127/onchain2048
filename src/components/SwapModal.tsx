@@ -368,9 +368,14 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
         toast.success('Approval confirmed!');
         await fetchBalances();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[v0] Approve error:', error);
-      toast.error('Approval failed');
+      const reason =
+        error?.shortMessage ||
+        error?.details ||
+        error?.message ||
+        'Unknown error';
+      toast.error(`Approval failed: ${reason}`);
     } finally {
       setIsLoading(false);
     }
@@ -465,9 +470,14 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
         await fetchBalances();
         onSwapSuccess?.();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[v0] Swap error:', error);
-      toast.error('Swap failed');
+      const reason =
+        error?.shortMessage ||
+        error?.details ||
+        error?.message ||
+        'Unknown error';
+      toast.error(`Swap failed: ${reason}`);
     } finally {
       setIsLoading(false);
     }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { base } from 'viem/chains';
-import { createWalletClient, createPublicClient, http, parseEther, formatEther } from 'viem';
+import { createWalletClient, createPublicClient, http, fallback, parseEther, formatEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { Attribution } from 'ox/erc8021';
 
@@ -11,10 +11,22 @@ const PAY_PER_MOVE_RECIPIENT = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249';
 const BUILDER_CODE = 'bc_dh0rqw67';
 const getAttributionData = () => Attribution.toDataSuffix({ codes: [BUILDER_CODE] });
 
+// Multiple Base RPCs for reliability (heavy txs like Uniswap swaps fail on the
+// default public RPC frequently — using a fallback transport avoids that)
+const BASE_RPC_URLS = [
+  'https://mainnet.base.org',
+  'https://base.llamarpc.com',
+  'https://1rpc.io/base',
+  'https://base.drpc.org',
+] as const;
+
+const baseTransport = () =>
+  fallback(BASE_RPC_URLS.map((url) => http(url, { timeout: 15000, retryCount: 1 })));
+
 // Public client for balance checks
 const publicClient = createPublicClient({
   chain: base,
-  transport: http(),
+  transport: baseTransport(),
 });
 
 export interface SelfPayPermissionParams {
@@ -107,7 +119,7 @@ export function useSelfPayWallet() {
         const client = createWalletClient({
           account,
           chain: base,
-          transport: http(),
+          transport: baseTransport(),
         });
 
         setRelayerClient(client);
@@ -210,25 +222,68 @@ export function useSelfPayWallet() {
         }
 
         const value = params.value ?? BigInt(0);
+        const data = (params.data ?? '0x') as `0x${string}`;
+        const to = params.to as `0x${string}`;
+
+        // Pre-flight: simulate the call so we surface revert reasons clearly
+        // (Uniswap swaps fail with detailed reasons like "STF" / "Too little received")
+        let gasLimit: bigint;
+        try {
+          const estimated = await publicClient.estimateGas({
+            account: relayerAddress as `0x${string}`,
+            to,
+            value,
+            data,
+          });
+          // Add a 25% buffer for safety
+          gasLimit = (estimated * BigInt(125)) / BigInt(100);
+        } catch (err: any) {
+          const reason =
+            err?.shortMessage ||
+            err?.details ||
+            err?.message ||
+            'Transaction would revert';
+          console.error('[v0] Relayer gas estimate failed:', err);
+          throw new Error(`Transaction would fail: ${reason}`);
+        }
+
+        // Get gas price to compute total cost
+        let gasPrice: bigint;
+        try {
+          gasPrice = await publicClient.getGasPrice();
+        } catch {
+          gasPrice = parseEther('0.000000001'); // 1 gwei fallback
+        }
+        const gasCost = gasLimit * gasPrice;
 
         // Pre-check balance for clearer errors
         const relayerBalance = await publicClient.getBalance({
           address: relayerAddress as `0x${string}`,
         });
-        const estimatedGas = parseEther('0.0005'); // bigger buffer for swap-style txs
-        if (relayerBalance < value + estimatedGas) {
+        const totalNeeded = value + gasCost;
+        if (relayerBalance < totalNeeded) {
           throw new Error(
-            `Insufficient relayer balance. Need ~${formatEther(value + estimatedGas)} ETH, have ${formatEther(relayerBalance)} ETH`
+            `Insufficient relayer balance. Need ~${formatEther(totalNeeded)} ETH (${formatEther(value)} value + ${formatEther(gasCost)} gas), have ${formatEther(relayerBalance)} ETH`
           );
         }
 
-        const txHash = await relayerClient.sendTransaction({
-          to: params.to as `0x${string}`,
-          value,
-          data: (params.data ?? '0x') as `0x${string}`,
-        });
-
-        return txHash;
+        try {
+          const txHash = await relayerClient.sendTransaction({
+            to,
+            value,
+            data,
+            gas: gasLimit,
+          });
+          return txHash;
+        } catch (err: any) {
+          const reason =
+            err?.shortMessage ||
+            err?.details ||
+            err?.message ||
+            'Unknown error';
+          console.error('[v0] Relayer sendTransaction failed:', err);
+          throw new Error(`Relayer tx failed: ${reason}`);
+        }
       } else {
         if (!provider || !address) {
           throw new Error('Wallet not connected');
