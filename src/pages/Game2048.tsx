@@ -64,6 +64,7 @@ export default function Game2048Page() {
   } = use2048Game();
 
   const [balance, setBalance] = useState('0');
+  const [b20BalanceWei, setB20BalanceWei] = useState<bigint>(BigInt(0));
   const [ethPrice, setEthPrice] = useState(3000);
   const [remainingMoves, setRemainingMoves] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
