@@ -339,7 +339,9 @@ export default function Game2048Page() {
         } else {
           // Pay-per-move mode: Payment FIRST, then move
           try {
-            const txHash = await selfPaySendTx(moveCostWei);
+            const txHash = useB20
+              ? await selfPaySendArbitraryTx({ to: B20_TOKEN_ADDRESS, value: BigInt(0), data: b20Data })
+              : await selfPaySendTx(moveCostWei);
             if (txHash) {
               setPendingTransactions(prev => [...prev, txHash]);
               console.log('Pay-per-move tx sent:', txHash);
