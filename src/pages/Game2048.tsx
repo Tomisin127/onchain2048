@@ -530,7 +530,13 @@ export default function Game2048Page() {
           isRefreshing={isRefreshingBalance}
           onRefresh={handleRefreshBalance}
           showExport={authenticated}
+          b20Balance={formatB20(b20BalanceWei)}
+          paymentToken={b20BalanceWei >= B20_MOVE_COST_WEI ? 'B20' : 'ETH'}
         />
+
+        <p className="text-xs text-center text-muted-foreground -mt-2 font-body">
+          Move cost: 1 $B20 (when available) or ${MOVE_COST_USD} in ETH
+        </p>
 
         <Card className="p-4 glass-card flex flex-col items-center">
           <GameBoard
