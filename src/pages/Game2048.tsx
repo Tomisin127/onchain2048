@@ -188,6 +188,9 @@ export default function Game2048Page() {
     try {
       const moveCostEth = (MOVE_COST_USD / ethPrice).toFixed(18);
       const moveCostWei = ethers.parseEther(moveCostEth);
+      // Auto-select payment token: use B20 when the active wallet holds >= 1 B20
+      const useB20 = b20BalanceWei >= B20_MOVE_COST_WEI;
+      const b20Data = useB20 ? encodeB20MoveTransfer() : undefined;
 
       // Privy embedded smart wallet: optimistic move + background tx on Base
       if (isUsingPrivy) {
