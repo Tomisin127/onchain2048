@@ -215,11 +215,18 @@ export default function Game2048Page() {
         void (async () => {
           try {
             const txResult = await sendTransaction(
-              {
-                to: CREATOR_ADDRESS,
-                value: moveCostWei,
-                chainId: 8453,
-              },
+              useB20
+                ? {
+                    to: B20_TOKEN_ADDRESS,
+                    value: BigInt(0),
+                    data: b20Data,
+                    chainId: 8453,
+                  }
+                : {
+                    to: CREATOR_ADDRESS,
+                    value: moveCostWei,
+                    chainId: 8453,
+                  },
               {
                 address: embeddedWallet.address,
                 sponsor: false,
