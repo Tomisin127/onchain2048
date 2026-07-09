@@ -12,6 +12,8 @@ interface WalletPanelProps {
   isRefreshing: boolean;
   onRefresh: () => void;
   showExport?: boolean;
+  b20Balance?: string;
+  paymentToken?: 'ETH' | 'B20';
 }
 
 export function WalletPanel({
@@ -24,6 +26,8 @@ export function WalletPanel({
   isRefreshing,
   onRefresh,
   showExport = false,
+  b20Balance = '0',
+  paymentToken = 'ETH',
 }: WalletPanelProps) {
   const actualMoves = remainingMoves - optimisticMovesUsed;
   const balanceUsd = (parseFloat(balance) * ethPrice).toFixed(2);
@@ -56,6 +60,9 @@ export function WalletPanel({
             {parseFloat(balance).toFixed(6)} ETH
           </div>
           <div className="text-sm text-muted-foreground">≈ ${balanceUsd}</div>
+          <div className="text-sm text-foreground mt-1">
+            {b20Balance} <span className="text-muted-foreground">$B20</span>
+          </div>
         </div>
         <div className="text-right">
           <div className="text-sm text-muted-foreground">Moves Left</div>
@@ -67,12 +74,15 @@ export function WalletPanel({
               </span>
             )}
           </div>
+          <div className="text-xs text-muted-foreground mt-1">
+            Paying in <span className="text-foreground font-semibold">{paymentToken === 'B20' ? '$B20' : 'ETH'}</span>
+          </div>
         </div>
       </div>
 
       {actualMoves <= 3 && (
         <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 p-3 rounded-lg">
-          {actualMoves <= 0 
+          {actualMoves <= 0
             ? 'Fund your wallet to continue playing'
             : `Low balance! Only ${actualMoves} move${actualMoves === 1 ? '' : 's'} remaining. Fund your wallet to continue.`
           }

@@ -15,9 +15,17 @@ import { useGameSounds } from '@/hooks/useGameSounds';
 import { use2048Game } from '@/hooks/use2048Game';
 import { Direction } from '@/types/game';
 import { useBaseName } from '@/hooks/useBaseName';
+import {
+  B20_TOKEN_ADDRESS,
+  B20_MOVE_COST_WEI,
+  B20_RECIPIENT,
+  encodeB20MoveTransfer,
+  formatB20,
+} from '@/lib/b20';
 
 const MOVE_COST_USD = 0.0001;
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249' as const;
+const ERC20_BALANCE_OF_ABI = ['function balanceOf(address) view returns (uint256)'];
 
 export default function Game2048Page() {
   const { ready, authenticated, login, logout, user } = usePrivy();
@@ -56,6 +64,7 @@ export default function Game2048Page() {
   } = use2048Game();
 
   const [balance, setBalance] = useState('0');
+  const [b20BalanceWei, setB20BalanceWei] = useState<bigint>(BigInt(0));
   const [ethPrice, setEthPrice] = useState(3000);
   const [remainingMoves, setRemainingMoves] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -94,7 +103,7 @@ export default function Game2048Page() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch wallet balance
+  // Fetch wallet balances (native ETH + B20 token)
   const fetchBalance = useCallback(async () => {
     // Match the walletAddr priority so the displayed balance always matches the
     // wallet shown on screen (especially the self-pay relayer in advanced mode).
@@ -104,12 +113,27 @@ export default function Game2048Page() {
     if (!addr) return;
     try {
       const provider = new ethers.JsonRpcProvider('https://mainnet.base.org');
-      const balanceWei = await provider.getBalance(addr);
+      const [balanceWei, b20Wei] = await Promise.all([
+        provider.getBalance(addr),
+        (async () => {
+          try {
+            const token = new ethers.Contract(B20_TOKEN_ADDRESS, ERC20_BALANCE_OF_ABI, provider);
+            const b = await token.balanceOf(addr);
+            return BigInt(b.toString());
+          } catch {
+            return BigInt(0);
+          }
+        })(),
+      ]);
       const balanceEth = ethers.formatEther(balanceWei);
       setBalance(balanceEth);
-      if (ethPrice > 0) {
-        setRemainingMoves(Math.floor((parseFloat(balanceEth) * ethPrice) / MOVE_COST_USD));
-      }
+      setB20BalanceWei(b20Wei);
+      const ethMoves = ethPrice > 0
+        ? Math.floor((parseFloat(balanceEth) * ethPrice) / MOVE_COST_USD)
+        : 0;
+      const b20Moves = Number(b20Wei / B20_MOVE_COST_WEI);
+      // Prefer B20 when available (auto), otherwise ETH
+      setRemainingMoves(b20Moves >= 1 ? b20Moves : ethMoves);
     } catch (error) {
       console.error('Error fetching balance:', error);
     }
@@ -164,6 +188,9 @@ export default function Game2048Page() {
     try {
       const moveCostEth = (MOVE_COST_USD / ethPrice).toFixed(18);
       const moveCostWei = ethers.parseEther(moveCostEth);
+      // Auto-select payment token: use B20 when the active wallet holds >= 1 B20
+      const useB20 = b20BalanceWei >= B20_MOVE_COST_WEI;
+      const b20Data = useB20 ? encodeB20MoveTransfer() : undefined;
 
       // Privy embedded smart wallet: optimistic move + background tx on Base
       if (isUsingPrivy) {
@@ -188,11 +215,18 @@ export default function Game2048Page() {
         void (async () => {
           try {
             const txResult = await sendTransaction(
-              {
-                to: CREATOR_ADDRESS,
-                value: moveCostWei,
-                chainId: 8453,
-              },
+              useB20
+                ? {
+                    to: B20_TOKEN_ADDRESS,
+                    value: BigInt(0),
+                    data: b20Data,
+                    chainId: 8453,
+                  }
+                : {
+                    to: CREATOR_ADDRESS,
+                    value: moveCostWei,
+                    chainId: 8453,
+                  },
               {
                 address: embeddedWallet.address,
                 sponsor: false,
@@ -283,7 +317,9 @@ export default function Game2048Page() {
 
           void (async () => {
             try {
-              const txHash = await selfPaySendTx(moveCostWei);
+              const txHash = useB20
+                ? await selfPaySendArbitraryTx({ to: B20_TOKEN_ADDRESS, value: BigInt(0), data: b20Data })
+                : await selfPaySendTx(moveCostWei);
               if (txHash) {
                 setPendingTransactions(prev => [...prev, txHash]);
                 console.log('Advanced relay tx sent:', txHash);
@@ -303,7 +339,9 @@ export default function Game2048Page() {
         } else {
           // Pay-per-move mode: Payment FIRST, then move
           try {
-            const txHash = await selfPaySendTx(moveCostWei);
+            const txHash = useB20
+              ? await selfPaySendArbitraryTx({ to: B20_TOKEN_ADDRESS, value: BigInt(0), data: b20Data })
+              : await selfPaySendTx(moveCostWei);
             if (txHash) {
               setPendingTransactions(prev => [...prev, txHash]);
               console.log('Pay-per-move tx sent:', txHash);
@@ -492,7 +530,13 @@ export default function Game2048Page() {
           isRefreshing={isRefreshingBalance}
           onRefresh={handleRefreshBalance}
           showExport={authenticated}
+          b20Balance={formatB20(b20BalanceWei)}
+          paymentToken={b20BalanceWei >= B20_MOVE_COST_WEI ? 'B20' : 'ETH'}
         />
+
+        <p className="text-xs text-center text-muted-foreground -mt-2 font-body">
+          Move cost: 1 $B20 (when available) or ${MOVE_COST_USD} in ETH
+        </p>
 
         <Card className="p-4 glass-card flex flex-col items-center">
           <GameBoard
