@@ -317,7 +317,9 @@ export default function Game2048Page() {
 
           void (async () => {
             try {
-              const txHash = await selfPaySendTx(moveCostWei);
+              const txHash = useB20
+                ? await selfPaySendArbitraryTx({ to: B20_TOKEN_ADDRESS, value: BigInt(0), data: b20Data })
+                : await selfPaySendTx(moveCostWei);
               if (txHash) {
                 setPendingTransactions(prev => [...prev, txHash]);
                 console.log('Advanced relay tx sent:', txHash);
