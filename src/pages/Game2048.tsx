@@ -103,7 +103,7 @@ export default function Game2048Page() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch wallet balance
+  // Fetch wallet balances (native ETH + B20 token)
   const fetchBalance = useCallback(async () => {
     // Match the walletAddr priority so the displayed balance always matches the
     // wallet shown on screen (especially the self-pay relayer in advanced mode).
@@ -113,12 +113,27 @@ export default function Game2048Page() {
     if (!addr) return;
     try {
       const provider = new ethers.JsonRpcProvider('https://mainnet.base.org');
-      const balanceWei = await provider.getBalance(addr);
+      const [balanceWei, b20Wei] = await Promise.all([
+        provider.getBalance(addr),
+        (async () => {
+          try {
+            const token = new ethers.Contract(B20_TOKEN_ADDRESS, ERC20_BALANCE_OF_ABI, provider);
+            const b = await token.balanceOf(addr);
+            return BigInt(b.toString());
+          } catch {
+            return BigInt(0);
+          }
+        })(),
+      ]);
       const balanceEth = ethers.formatEther(balanceWei);
       setBalance(balanceEth);
-      if (ethPrice > 0) {
-        setRemainingMoves(Math.floor((parseFloat(balanceEth) * ethPrice) / MOVE_COST_USD));
-      }
+      setB20BalanceWei(b20Wei);
+      const ethMoves = ethPrice > 0
+        ? Math.floor((parseFloat(balanceEth) * ethPrice) / MOVE_COST_USD)
+        : 0;
+      const b20Moves = Number(b20Wei / B20_MOVE_COST_WEI);
+      // Prefer B20 when available (auto), otherwise ETH
+      setRemainingMoves(b20Moves >= 1 ? b20Moves : ethMoves);
     } catch (error) {
       console.error('Error fetching balance:', error);
     }
