@@ -84,6 +84,8 @@ export default function Game2048Page() {
   const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
   const [pendingTransactions, setPendingTransactions] = useState<string[]>([]);
   const [optimisticMovesUsed, setOptimisticMovesUsed] = useState(0);
+  const [b20Allowance, setB20Allowance] = useState<bigint>(BigInt(0));
+  const [onchainScore, setOnchainScore] = useState<number | null>(null);
 
   const { playMoveSound, playMilestoneSound } = useGameSounds();
   const milestoneTilesRef = useRef<Set<string>>(new Set());
@@ -123,14 +125,21 @@ export default function Game2048Page() {
       : embeddedWalletAddress || baseAddress || selfPayAddress;
     if (!addr) return;
     try {
-      const provider = new ethers.JsonRpcProvider('https://mainnet.base.org');
-      const [balanceWei, b20Wei] = await Promise.all([
+      const token = new ethers.Contract(B20_TOKEN_ADDRESS, ERC20_BALANCE_OF_ABI, provider);
+      const [balanceWei, b20Wei, allowanceWei] = await Promise.all([
         provider.getBalance(addr),
         (async () => {
           try {
-            const token = new ethers.Contract(B20_TOKEN_ADDRESS, ERC20_BALANCE_OF_ABI, provider);
             const b = await token.balanceOf(addr);
             return BigInt(b.toString());
+          } catch {
+            return BigInt(0);
+          }
+        })(),
+        (async () => {
+          try {
+            const a = await token.allowance(addr, ONCHAIN_2048_ADDRESS);
+            return BigInt(a.toString());
           } catch {
             return BigInt(0);
           }
@@ -139,6 +148,7 @@ export default function Game2048Page() {
       const balanceEth = ethers.formatEther(balanceWei);
       setBalance(balanceEth);
       setB20BalanceWei(b20Wei);
+      setB20Allowance(allowanceWei);
       const ethMoves = ethPrice > 0
         ? Math.floor((parseFloat(balanceEth) * ethPrice) / MOVE_COST_USD)
         : 0;
