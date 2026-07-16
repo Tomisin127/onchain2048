@@ -172,11 +172,80 @@ export default function Game2048Page() {
     setPendingTransactions([]);
   }, [balance]);
 
+  // Subscribe to on-chain MoveMade events for the active wallet address.
+  // The contract score is displayed alongside the local score for reconciliation.
+  useEffect(() => {
+    const addr = isSelfPayConnected
+      ? selfPayAddress
+      : embeddedWalletAddress || baseAddress || selfPayAddress;
+    if (!addr) {
+      setOnchainScore(null);
+      return;
+    }
+    let cancelled = false;
+    const provider = new ethers.JsonRpcProvider('https://mainnet.base.org');
+    const contract = new ethers.Contract(
+      ONCHAIN_2048_ADDRESS,
+      ['event MoveMade(address indexed player, uint8 direction, uint128 newBoard, uint256 newScore, bool gameOver, string moveData)',
+       'function getGameState(address) view returns (uint128, uint256, bool)'],
+      provider
+    );
+
+    // Initial fetch of on-chain score
+    (async () => {
+      try {
+        const [, score] = await contract.getGameState(addr);
+        if (!cancelled) setOnchainScore(Number(score));
+      } catch {
+        /* no active game yet */
+      }
+    })();
+
+    const handler = (_player: string, _dir: number, _board: bigint, newScore: bigint) => {
+      if (!cancelled) setOnchainScore(Number(newScore));
+    };
+    const filter = contract.filters.MoveMade(addr);
+    contract.on(filter, handler);
+    return () => {
+      cancelled = true;
+      contract.off(filter, handler);
+    };
+  }, [embeddedWalletAddress, baseAddress, selfPayAddress, isSelfPayConnected]);
+
   const handleRefreshBalance = async () => {
     setIsRefreshingBalance(true);
     await fetchBalance();
     setTimeout(() => setIsRefreshingBalance(false), 500);
   };
+
+  // Fire-and-forget: start a fresh on-chain game. Reverts silently if the
+  // player already has an active game — that's fine because it means the
+  // player can just keep playing.
+  const startOnchainGame = useCallback(async () => {
+    const isUsingPrivy = authenticated && wallets.length > 0;
+    const isUsingSelfPay = isSelfPayConnected && selfPayAddress;
+    try {
+      const data = encodeStartNewGame();
+      if (isUsingPrivy) {
+        const embedded = wallets.find(w => w.walletClientType === 'privy');
+        if (!embedded) return;
+        await sendTransaction(
+          { to: ONCHAIN_2048_ADDRESS, value: BigInt(0), data, chainId: 8453 },
+          { address: embedded.address, sponsor: false, uiOptions: { showWalletUIs: false } }
+        );
+      } else if (isUsingSelfPay) {
+        await selfPaySendArbitraryTx({ to: ONCHAIN_2048_ADDRESS, value: BigInt(0), data });
+      }
+    } catch (err) {
+      // Contract reverts "Active game exists" when a game is already ongoing.
+      console.log('startNewGame skipped:', err instanceof Error ? err.message : err);
+    }
+  }, [authenticated, wallets, isSelfPayConnected, selfPayAddress, sendTransaction, selfPaySendArbitraryTx]);
+
+  const handleNewGame = useCallback(() => {
+    initGame();
+    void startOnchainGame();
+  }, [initGame, startOnchainGame]);
 
   // Check milestones
   const checkMilestones = useCallback(() => {
@@ -548,6 +617,7 @@ export default function Game2048Page() {
           showExport={authenticated}
           b20Balance={formatB20(b20BalanceWei)}
           paymentToken={b20BalanceWei >= B20_MOVE_COST_WEI ? 'B20' : 'ETH'}
+          onchainScore={onchainScore}
         />
 
         <p className="text-xs text-center text-muted-foreground -mt-2 font-body">
@@ -568,7 +638,7 @@ export default function Game2048Page() {
           )}
 
           <Button
-            onClick={initGame}
+            onClick={handleNewGame}
             className="w-full mt-4 gradient-btn text-foreground font-display font-semibold"
             disabled={isProcessing}
           >
@@ -576,7 +646,7 @@ export default function Game2048Page() {
           </Button>
 
           <p className="text-xs text-center text-muted-foreground mt-3 font-body">
-            Swipe or use arrow keys • ${MOVE_COST_USD} per move
+            Swipe or use arrow keys • On-chain via 2048 contract
           </p>
         </Card>
       </div>
