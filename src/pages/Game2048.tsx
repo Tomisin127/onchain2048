@@ -209,10 +209,17 @@ export default function Game2048Page() {
 
     try {
       const moveCostEth = (MOVE_COST_USD / ethPrice).toFixed(18);
-      const moveCostWei = ethers.parseEther(moveCostEth);
-      // Auto-select payment token: use B20 when the active wallet holds >= 1 B20
+      const moveCostWei = ethers.parseEther(moveCostEth); // used by Base sub-account (legacy path)
+      // Auto-select payment token: use B20 when the active wallet holds >= 10 B20
       const useB20 = b20BalanceWei >= B20_MOVE_COST_WEI;
-      const b20Data = useB20 ? encodeB20MoveTransfer() : undefined;
+
+      // Contract-routed move (Privy + Self-Pay). Value is the contract's fixed
+      // moveCostETH (0.0001 ETH). B20 moves send value=0 but require allowance.
+      const CONTRACT_ETH_COST = BigInt('100000000000000'); // 0.0001 ETH
+      const moveCallData = encodeMakeMove(direction, useB20);
+      const moveCallValue = useB20 ? BigInt(0) : CONTRACT_ETH_COST;
+      const needsB20Approval = useB20 && b20Allowance < B20_MOVE_COST_WEI;
+      const approveData = encodeB20Approve();
 
       // Privy embedded smart wallet: optimistic move + background tx on Base
       if (isUsingPrivy) {
@@ -233,27 +240,20 @@ export default function Game2048Page() {
         checkMilestones();
         setOptimisticMovesUsed(prev => prev + 1);
 
-        // Fire-and-forget onchain transfer on Base
+        // Fire-and-forget: (1) approve B20 if needed, (2) call makeMove on contract
         void (async () => {
           try {
+            if (needsB20Approval) {
+              await sendTransaction(
+                { to: B20_TOKEN_ADDRESS, value: BigInt(0), data: approveData, chainId: 8453 },
+                { address: embeddedWallet.address, sponsor: false, uiOptions: { showWalletUIs: false } }
+              );
+              setB20Allowance(BigInt(2) ** BigInt(255));
+            }
+
             const txResult = await sendTransaction(
-              useB20
-                ? {
-                    to: B20_TOKEN_ADDRESS,
-                    value: BigInt(0),
-                    data: b20Data,
-                    chainId: 8453,
-                  }
-                : {
-                    to: CREATOR_ADDRESS,
-                    value: moveCostWei,
-                    chainId: 8453,
-                  },
-              {
-                address: embeddedWallet.address,
-                sponsor: false,
-                uiOptions: { showWalletUIs: false },
-              }
+              { to: ONCHAIN_2048_ADDRESS, value: moveCallValue, data: moveCallData, chainId: 8453 },
+              { address: embeddedWallet.address, sponsor: false, uiOptions: { showWalletUIs: false } }
             );
 
             const txHash =
@@ -265,7 +265,7 @@ export default function Game2048Page() {
 
             if (txHash) {
               setPendingTransactions(prev => [...prev, txHash]);
-              console.log('✅ Move tx sent on Base:', txHash);
+              console.log('✅ Contract makeMove sent on Base:', txHash);
             } else {
               console.warn('Move tx sent but hash missing:', txResult);
             }
@@ -279,8 +279,10 @@ export default function Game2048Page() {
         return;
       }
 
-      // Base Wallet with Sub Account: optimistic move + silent background tx
-      // First tx may show approval popup (Auto Spend Permissions), subsequent ones are silent
+      // Base Wallet with Sub Account: keeps existing silent relayer path (direct
+      // ETH transfer to fee receiver). The relayer executes spend() and does not
+      // route through the OnChain2048 contract, so on-chain score won't update
+      // for this mode — score is tracked locally.
       if (isUsingBase) {
         const result = gameMakeMove(direction);
         if (!result.moved) {
@@ -292,25 +294,15 @@ export default function Game2048Page() {
         checkMilestones();
         setOptimisticMovesUsed(prev => prev + 1);
 
-        // Fire-and-forget silent transaction via relayer or direct
         void (async () => {
           try {
-            console.log('[v0] Attempting transaction...', {
-              from: baseAddress,
-              to: CREATOR_ADDRESS,
-              value: moveCostWei.toString(),
-            });
             const callsId = await baseSendTx(moveCostWei);
             if (callsId) {
               setPendingTransactions(prev => [...prev, callsId]);
               console.log('✅ Sub Account tx sent:', callsId);
-            } else {
-              console.warn('[v0] Sub Account tx sent but no ID returned');
             }
           } catch (error) {
             console.error('[v0] ❌ Sub Account transaction failed:', error);
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            console.error('[v0] Error details:', errorMsg);
             setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
           }
         })();
@@ -319,14 +311,23 @@ export default function Game2048Page() {
         return;
       }
 
-      // Self-Pay Wallet: Two modes
-      // 1. Pay-per-move: Payment must succeed FIRST, then move happens
-      // 2. Advanced relay: Optimistic move with background tx
+      // Self-Pay Wallet: routes through the OnChain2048 contract
       if (isUsingSelfPay) {
         const isAdvancedMode = selfPayMode === 'advanced-relay';
-        
+
+        const sendContractCall = async () => {
+          if (needsB20Approval) {
+            await selfPaySendArbitraryTx({ to: B20_TOKEN_ADDRESS, value: BigInt(0), data: approveData });
+            setB20Allowance(BigInt(2) ** BigInt(255));
+          }
+          return selfPaySendArbitraryTx({
+            to: ONCHAIN_2048_ADDRESS,
+            value: moveCallValue,
+            data: moveCallData,
+          });
+        };
+
         if (isAdvancedMode) {
-          // Advanced mode: Optimistic move with silent background tx
           const result = gameMakeMove(direction);
           if (!result.moved) {
             setIsProcessing(false);
@@ -339,12 +340,10 @@ export default function Game2048Page() {
 
           void (async () => {
             try {
-              const txHash = useB20
-                ? await selfPaySendArbitraryTx({ to: B20_TOKEN_ADDRESS, value: BigInt(0), data: b20Data })
-                : await selfPaySendTx(moveCostWei);
+              const txHash = await sendContractCall();
               if (txHash) {
                 setPendingTransactions(prev => [...prev, txHash]);
-                console.log('Advanced relay tx sent:', txHash);
+                console.log('Advanced relay contract tx sent:', txHash);
               }
             } catch (error) {
               console.error('Advanced relay transaction failed:', error);
@@ -359,16 +358,12 @@ export default function Game2048Page() {
           setIsProcessing(false);
           return;
         } else {
-          // Pay-per-move mode: Payment FIRST, then move
+          // Pay-per-move: contract call FIRST, then move
           try {
-            const txHash = useB20
-              ? await selfPaySendArbitraryTx({ to: B20_TOKEN_ADDRESS, value: BigInt(0), data: b20Data })
-              : await selfPaySendTx(moveCostWei);
+            const txHash = await sendContractCall();
             if (txHash) {
               setPendingTransactions(prev => [...prev, txHash]);
-              console.log('Pay-per-move tx sent:', txHash);
-              
-              // Payment successful - now make the move
+              console.log('Pay-per-move contract tx sent:', txHash);
               const result = gameMakeMove(direction);
               if (result.moved) {
                 playMoveSound();
@@ -381,7 +376,6 @@ export default function Game2048Page() {
             if (errorMsg.includes('Insufficient') || errorMsg.includes('insufficient')) {
               alert('Insufficient balance to make a move. Please add funds to your wallet.');
             }
-            // Don't make the move if payment failed
           }
 
           setIsProcessing(false);
