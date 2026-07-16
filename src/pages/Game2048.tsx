@@ -22,10 +22,21 @@ import {
   encodeB20MoveTransfer,
   formatB20,
 } from '@/lib/b20';
+import {
+  ONCHAIN_2048_ADDRESS,
+  ONCHAIN_2048_ABI,
+  MOVE_MADE_EVENT,
+  encodeMakeMove,
+  encodeStartNewGame,
+  encodeB20Approve,
+} from '@/lib/contract';
 
 const MOVE_COST_USD = 0.0001;
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249' as const;
-const ERC20_BALANCE_OF_ABI = ['function balanceOf(address) view returns (uint256)'];
+const ERC20_BALANCE_OF_ABI = [
+  'function balanceOf(address) view returns (uint256)',
+  'function allowance(address owner, address spender) view returns (uint256)',
+];
 
 export default function Game2048Page() {
   const { ready, authenticated, login, logout, user } = usePrivy();
