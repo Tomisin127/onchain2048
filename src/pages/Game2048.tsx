@@ -125,6 +125,7 @@ export default function Game2048Page() {
       : embeddedWalletAddress || baseAddress || selfPayAddress;
     if (!addr) return;
     try {
+      const provider = new ethers.JsonRpcProvider('https://mainnet.base.org');
       const token = new ethers.Contract(B20_TOKEN_ADDRESS, ERC20_BALANCE_OF_ABI, provider);
       const [balanceWei, b20Wei, allowanceWei] = await Promise.all([
         provider.getBalance(addr),
