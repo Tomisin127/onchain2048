@@ -3,7 +3,8 @@ import { encodeFunctionData, erc20Abi } from 'viem';
 // B20 token payment configuration (Base mainnet)
 export const B20_TOKEN_ADDRESS = '0xb200000000000000000000ae0575aaf8de90b28d' as const;
 export const B20_DECIMALS = 18;
-export const B20_MOVE_COST_WEI = BigInt(10) ** BigInt(B20_DECIMALS); // 1 B20 per move
+// New OnChain2048 contract charges 10 B20 per move via makeMove(useB20=true)
+export const B20_MOVE_COST_WEI = BigInt(10) * BigInt(10) ** BigInt(B20_DECIMALS);
 export const B20_RECIPIENT = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249' as const;
 
 // Encode ERC20 transfer(recipient, amount) calldata for a move payment

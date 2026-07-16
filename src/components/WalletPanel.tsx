@@ -14,6 +14,7 @@ interface WalletPanelProps {
   showExport?: boolean;
   b20Balance?: string;
   paymentToken?: 'ETH' | 'B20';
+  onchainScore?: number | null;
 }
 
 export function WalletPanel({
@@ -28,6 +29,7 @@ export function WalletPanel({
   showExport = false,
   b20Balance = '0',
   paymentToken = 'ETH',
+  onchainScore = null,
 }: WalletPanelProps) {
   const actualMoves = remainingMoves - optimisticMovesUsed;
   const balanceUsd = (parseFloat(balance) * ethPrice).toFixed(2);
@@ -77,6 +79,11 @@ export function WalletPanel({
           <div className="text-xs text-muted-foreground mt-1">
             Paying in <span className="text-foreground font-semibold">{paymentToken === 'B20' ? '$B20' : 'ETH'}</span>
           </div>
+          {onchainScore !== null && (
+            <div className="text-xs text-muted-foreground mt-1">
+              On-chain: <span className="text-foreground font-mono">{onchainScore}</span>
+            </div>
+          )}
         </div>
       </div>
 
