@@ -31,7 +31,8 @@ import {
   encodeB20Approve,
 } from '@/lib/contract';
 
-const MOVE_COST_USD = 0.0001;
+// Contract charges a fixed 0.0001 ETH per move (moveCostETH on-chain).
+const MOVE_COST_ETH = 0.0001;
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249' as const;
 const ERC20_BALANCE_OF_ABI = [
   'function balanceOf(address) view returns (uint256)',
