@@ -151,9 +151,7 @@ export default function Game2048Page() {
       setBalance(balanceEth);
       setB20BalanceWei(b20Wei);
       setB20Allowance(allowanceWei);
-      const ethMoves = ethPrice > 0
-        ? Math.floor((parseFloat(balanceEth) * ethPrice) / MOVE_COST_USD)
-        : 0;
+      const ethMoves = Math.floor(parseFloat(balanceEth) / MOVE_COST_ETH);
       const b20Moves = Number(b20Wei / B20_MOVE_COST_WEI);
       // Prefer B20 when available (auto), otherwise ETH
       setRemainingMoves(b20Moves >= 1 ? b20Moves : ethMoves);
