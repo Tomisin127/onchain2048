@@ -31,7 +31,8 @@ import {
   encodeB20Approve,
 } from '@/lib/contract';
 
-const MOVE_COST_USD = 0.0001;
+// Contract charges a fixed 0.0001 ETH per move (moveCostETH on-chain).
+const MOVE_COST_ETH = 0.0001;
 const CREATOR_ADDRESS = '0xEA549e458e77Fd93bf330e5EAEf730c50d8F5249' as const;
 const ERC20_BALANCE_OF_ABI = [
   'function balanceOf(address) view returns (uint256)',
@@ -150,9 +151,7 @@ export default function Game2048Page() {
       setBalance(balanceEth);
       setB20BalanceWei(b20Wei);
       setB20Allowance(allowanceWei);
-      const ethMoves = ethPrice > 0
-        ? Math.floor((parseFloat(balanceEth) * ethPrice) / MOVE_COST_USD)
-        : 0;
+      const ethMoves = Math.floor(parseFloat(balanceEth) / MOVE_COST_ETH);
       const b20Moves = Number(b20Wei / B20_MOVE_COST_WEI);
       // Prefer B20 when available (auto), otherwise ETH
       setRemainingMoves(b20Moves >= 1 ? b20Moves : ethMoves);
@@ -231,7 +230,7 @@ export default function Game2048Page() {
         if (!embedded) return;
         await sendTransaction(
           { to: ONCHAIN_2048_ADDRESS, value: BigInt(0), data, chainId: 8453 },
-          { address: embedded.address, sponsor: false, uiOptions: { showWalletUIs: false } }
+          { address: embedded.address, uiOptions: { showWalletUIs: false } }
         );
       } else if (isUsingSelfPay) {
         await selfPaySendArbitraryTx({ to: ONCHAIN_2048_ADDRESS, value: BigInt(0), data });
@@ -277,8 +276,8 @@ export default function Game2048Page() {
     setIsProcessing(true);
 
     try {
-      const moveCostEth = (MOVE_COST_USD / ethPrice).toFixed(18);
-      const moveCostWei = ethers.parseEther(moveCostEth); // used by Base sub-account (legacy path)
+      const moveCostWei = ethers.parseEther(MOVE_COST_ETH.toString()); // legacy Base sub-account path
+
       // Auto-select payment token: use B20 when the active wallet holds >= 10 B20
       const useB20 = b20BalanceWei >= B20_MOVE_COST_WEI;
 
@@ -315,14 +314,14 @@ export default function Game2048Page() {
             if (needsB20Approval) {
               await sendTransaction(
                 { to: B20_TOKEN_ADDRESS, value: BigInt(0), data: approveData, chainId: 8453 },
-                { address: embeddedWallet.address, sponsor: false, uiOptions: { showWalletUIs: false } }
+                { address: embeddedWallet.address, uiOptions: { showWalletUIs: false } }
               );
               setB20Allowance(BigInt(2) ** BigInt(255));
             }
 
             const txResult = await sendTransaction(
               { to: ONCHAIN_2048_ADDRESS, value: moveCallValue, data: moveCallData, chainId: 8453 },
-              { address: embeddedWallet.address, sponsor: false, uiOptions: { showWalletUIs: false } }
+              { address: embeddedWallet.address, uiOptions: { showWalletUIs: false } }
             );
 
             const txHash =
@@ -339,8 +338,12 @@ export default function Game2048Page() {
               console.warn('Move tx sent but hash missing:', txResult);
             }
           } catch (error) {
-            console.error('❌ Background transaction failed:', error);
+            const msg = error instanceof Error ? error.message : String(error);
+            console.error('❌ Background transaction failed:', msg);
             setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
+            if (/insufficient|balance|funds/i.test(msg)) {
+              alert(`Move tx failed: ${msg}. Fund your Privy embedded wallet with a small amount of Base ETH for gas, or top up B20.`);
+            }
           }
         })();
 
@@ -621,7 +624,7 @@ export default function Game2048Page() {
         />
 
         <p className="text-xs text-center text-muted-foreground -mt-2 font-body">
-          Move cost: 1 $B20 (when available) or ${MOVE_COST_USD} in ETH
+          Move cost: 10 $B20 (when available) or {MOVE_COST_ETH} ETH (~${(MOVE_COST_ETH * ethPrice).toFixed(2)})
         </p>
 
         <Card className="p-4 glass-card flex flex-col items-center">
