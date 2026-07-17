@@ -671,6 +671,17 @@ export default function Game2048Page() {
 
         <ScorePanel score={score} highScore={highScore} />
 
+        <AIModePanel
+          moveCount={moveCount}
+          unlockAt={AI_UNLOCK_MOVES}
+          isUnlocked={isAIUnlocked}
+          isAutoPlaying={isAutoPlaying}
+          onToggleAutoPlay={() => setIsAutoPlaying((v) => !v)}
+          boardTiles={tiles}
+          score={score}
+        />
+
+
         <WalletPanel
           walletAddress={walletAddr}
           balance={balance}
