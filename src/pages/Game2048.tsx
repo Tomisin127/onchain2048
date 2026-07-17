@@ -254,8 +254,20 @@ export default function Game2048Page() {
 
   const handleNewGame = useCallback(() => {
     initGame();
+    resetMelody();
+    milestoneTilesRef.current.clear();
     void startOnchainGame();
-  }, [initGame, startOnchainGame]);
+  }, [initGame, resetMelody, startOnchainGame]);
+
+  // Detect merges (any tile flagged isMerged) and advance the piano melody.
+  useEffect(() => {
+    if (tiles.some((t) => t.isMerged)) playMergeNote();
+  }, [tiles, playMergeNote]);
+
+  // Persist move count for the AI-mode progress bar
+  useEffect(() => {
+    localStorage.setItem('ai2048_move_count', String(moveCount));
+  }, [moveCount]);
 
   // Check milestones
   const checkMilestones = useCallback(() => {
