@@ -276,8 +276,8 @@ export default function Game2048Page() {
     setIsProcessing(true);
 
     try {
-      const moveCostEth = (MOVE_COST_USD / ethPrice).toFixed(18);
-      const moveCostWei = ethers.parseEther(moveCostEth); // used by Base sub-account (legacy path)
+      const moveCostWei = ethers.parseEther(MOVE_COST_ETH.toString()); // legacy Base sub-account path
+
       // Auto-select payment token: use B20 when the active wallet holds >= 10 B20
       const useB20 = b20BalanceWei >= B20_MOVE_COST_WEI;
 
