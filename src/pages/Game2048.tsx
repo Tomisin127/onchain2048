@@ -545,7 +545,27 @@ export default function Game2048Page() {
     setTouchStart(null);
   };
 
-  const isConnected = authenticated || isBaseConnected || isSelfPayConnected;
+  // Keep a ref to makeMove so the auto-play interval always sees the latest closure.
+  const makeMoveRef = useRef(makeMove);
+  makeMoveRef.current = makeMove;
+
+  // AI auto-play loop: every ~900ms, pick the best move for the current board.
+  useEffect(() => {
+    autoPlayRef.current = isAutoPlaying;
+    if (!isAutoPlaying) return;
+    const id = setInterval(() => {
+      if (!autoPlayRef.current) return;
+      if (gameOver) {
+        setIsAutoPlaying(false);
+        return;
+      }
+      const grid = tilesToGrid(tiles);
+      const dir = bestMove(grid);
+      if (dir) void makeMoveRef.current(dir);
+    }, 900);
+    return () => clearInterval(id);
+  }, [isAutoPlaying, tiles, gameOver]);
+
   // Prioritize the self-pay wallet when active, since that's the wallet the user
   // explicitly logged in with (and in advanced mode it's the relayer that holds funds).
   const walletAddr = isSelfPayConnected
