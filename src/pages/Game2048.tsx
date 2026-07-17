@@ -230,7 +230,7 @@ export default function Game2048Page() {
         if (!embedded) return;
         await sendTransaction(
           { to: ONCHAIN_2048_ADDRESS, value: BigInt(0), data, chainId: 8453 },
-          { address: embedded.address, sponsor: false, uiOptions: { showWalletUIs: false } }
+          { address: embedded.address, uiOptions: { showWalletUIs: false } }
         );
       } else if (isUsingSelfPay) {
         await selfPaySendArbitraryTx({ to: ONCHAIN_2048_ADDRESS, value: BigInt(0), data });
@@ -314,14 +314,14 @@ export default function Game2048Page() {
             if (needsB20Approval) {
               await sendTransaction(
                 { to: B20_TOKEN_ADDRESS, value: BigInt(0), data: approveData, chainId: 8453 },
-                { address: embeddedWallet.address, sponsor: false, uiOptions: { showWalletUIs: false } }
+                { address: embeddedWallet.address, uiOptions: { showWalletUIs: false } }
               );
               setB20Allowance(BigInt(2) ** BigInt(255));
             }
 
             const txResult = await sendTransaction(
               { to: ONCHAIN_2048_ADDRESS, value: moveCallValue, data: moveCallData, chainId: 8453 },
-              { address: embeddedWallet.address, sponsor: false, uiOptions: { showWalletUIs: false } }
+              { address: embeddedWallet.address, uiOptions: { showWalletUIs: false } }
             );
 
             const txHash =
