@@ -338,8 +338,12 @@ export default function Game2048Page() {
               console.warn('Move tx sent but hash missing:', txResult);
             }
           } catch (error) {
-            console.error('❌ Background transaction failed:', error);
+            const msg = error instanceof Error ? error.message : String(error);
+            console.error('❌ Background transaction failed:', msg);
             setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
+            if (/insufficient|balance|funds/i.test(msg)) {
+              alert(`Move tx failed: ${msg}. Fund your Privy embedded wallet with a small amount of Base ETH for gas, or top up B20.`);
+            }
           }
         })();
 
