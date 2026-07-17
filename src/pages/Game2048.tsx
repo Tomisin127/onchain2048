@@ -264,6 +264,23 @@ export default function Game2048Page() {
     if (tiles.some((t) => t.isMerged)) playMergeNote();
   }, [tiles, playMergeNote]);
 
+  // Track completed moves: gameMakeMove spawns exactly 1 new tile per valid move,
+  // so a bump in the max tile id maps 1-to-1 with a successful move.
+  const lastMaxTileIdRef = useRef(0);
+  useEffect(() => {
+    if (tiles.length === 0) return;
+    const maxId = tiles.reduce((m, t) => (t.id > m ? t.id : m), 0);
+    if (lastMaxTileIdRef.current === 0) {
+      lastMaxTileIdRef.current = maxId;
+      return;
+    }
+    if (maxId > lastMaxTileIdRef.current) {
+      const delta = maxId - lastMaxTileIdRef.current;
+      lastMaxTileIdRef.current = maxId;
+      setMoveCount((c) => c + delta);
+    }
+  }, [tiles]);
+
   // Persist move count for the AI-mode progress bar
   useEffect(() => {
     localStorage.setItem('ai2048_move_count', String(moveCount));
