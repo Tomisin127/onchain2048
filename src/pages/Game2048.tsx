@@ -620,7 +620,7 @@ export default function Game2048Page() {
         />
 
         <p className="text-xs text-center text-muted-foreground -mt-2 font-body">
-          Move cost: 1 $B20 (when available) or ${MOVE_COST_USD} in ETH
+          Move cost: 10 $B20 (when available) or {MOVE_COST_ETH} ETH (~${(MOVE_COST_ETH * ethPrice).toFixed(2)})
         </p>
 
         <Card className="p-4 glass-card flex flex-col items-center">
