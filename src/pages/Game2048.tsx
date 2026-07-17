@@ -566,6 +566,9 @@ export default function Game2048Page() {
     return () => clearInterval(id);
   }, [isAutoPlaying, tiles, gameOver]);
 
+  const isConnected = authenticated || isBaseConnected || isSelfPayConnected;
+
+
   // Prioritize the self-pay wallet when active, since that's the wallet the user
   // explicitly logged in with (and in advanced mode it's the relayer that holds funds).
   const walletAddr = isSelfPayConnected
