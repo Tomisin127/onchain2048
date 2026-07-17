@@ -2,3 +2,6 @@ project_id = "hazwgypingwpnaqblgiu"
 
 [functions.send-play-reminder]
 verify_jwt = false
+
+[functions.ai-2048-advisor]
+verify_jwt = false

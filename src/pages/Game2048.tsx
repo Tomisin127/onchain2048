@@ -1,4 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { AIModePanel } from '@/components/AIModePanel';
+import { bestMove, tilesToGrid } from '@/lib/ai2048';
 import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
 import { useBaseSubAccount } from '@/hooks/useBaseSubAccount';
@@ -88,8 +90,17 @@ export default function Game2048Page() {
   const [b20Allowance, setB20Allowance] = useState<bigint>(BigInt(0));
   const [onchainScore, setOnchainScore] = useState<number | null>(null);
 
-  const { playMoveSound, playMilestoneSound } = useGameSounds();
+  const { playMoveSound, playMergeNote, playMilestoneSound, resetMelody } = useGameSounds();
   const milestoneTilesRef = useRef<Set<string>>(new Set());
+  const prevTileValuesRef = useRef<number[]>([]);
+  const [moveCount, setMoveCount] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    return parseInt(localStorage.getItem('ai2048_move_count') || '0', 10);
+  });
+  const AI_UNLOCK_MOVES = 100;
+  const isAIUnlocked = moveCount >= AI_UNLOCK_MOVES;
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false);
+  const autoPlayRef = useRef(false);
 
   // Get embedded wallet address
   useEffect(() => {
@@ -243,8 +254,37 @@ export default function Game2048Page() {
 
   const handleNewGame = useCallback(() => {
     initGame();
+    resetMelody();
+    milestoneTilesRef.current.clear();
     void startOnchainGame();
-  }, [initGame, startOnchainGame]);
+  }, [initGame, resetMelody, startOnchainGame]);
+
+  // Detect merges (any tile flagged isMerged) and advance the piano melody.
+  useEffect(() => {
+    if (tiles.some((t) => t.isMerged)) playMergeNote();
+  }, [tiles, playMergeNote]);
+
+  // Track completed moves: gameMakeMove spawns exactly 1 new tile per valid move,
+  // so a bump in the max tile id maps 1-to-1 with a successful move.
+  const lastMaxTileIdRef = useRef(0);
+  useEffect(() => {
+    if (tiles.length === 0) return;
+    const maxId = tiles.reduce((m, t) => (t.id > m ? t.id : m), 0);
+    if (lastMaxTileIdRef.current === 0) {
+      lastMaxTileIdRef.current = maxId;
+      return;
+    }
+    if (maxId > lastMaxTileIdRef.current) {
+      const delta = maxId - lastMaxTileIdRef.current;
+      lastMaxTileIdRef.current = maxId;
+      setMoveCount((c) => c + delta);
+    }
+  }, [tiles]);
+
+  // Persist move count for the AI-mode progress bar
+  useEffect(() => {
+    localStorage.setItem('ai2048_move_count', String(moveCount));
+  }, [moveCount]);
 
   // Check milestones
   const checkMilestones = useCallback(() => {
@@ -505,7 +545,30 @@ export default function Game2048Page() {
     setTouchStart(null);
   };
 
+  // Keep a ref to makeMove so the auto-play interval always sees the latest closure.
+  const makeMoveRef = useRef(makeMove);
+  makeMoveRef.current = makeMove;
+
+  // AI auto-play loop: every ~900ms, pick the best move for the current board.
+  useEffect(() => {
+    autoPlayRef.current = isAutoPlaying;
+    if (!isAutoPlaying) return;
+    const id = setInterval(() => {
+      if (!autoPlayRef.current) return;
+      if (gameOver) {
+        setIsAutoPlaying(false);
+        return;
+      }
+      const grid = tilesToGrid(tiles);
+      const dir = bestMove(grid);
+      if (dir) void makeMoveRef.current(dir);
+    }, 900);
+    return () => clearInterval(id);
+  }, [isAutoPlaying, tiles, gameOver]);
+
   const isConnected = authenticated || isBaseConnected || isSelfPayConnected;
+
+
   // Prioritize the self-pay wallet when active, since that's the wallet the user
   // explicitly logged in with (and in advanced mode it's the relayer that holds funds).
   const walletAddr = isSelfPayConnected
@@ -607,6 +670,17 @@ export default function Game2048Page() {
         </div>
 
         <ScorePanel score={score} highScore={highScore} />
+
+        <AIModePanel
+          moveCount={moveCount}
+          unlockAt={AI_UNLOCK_MOVES}
+          isUnlocked={isAIUnlocked}
+          isAutoPlaying={isAutoPlaying}
+          onToggleAutoPlay={() => setIsAutoPlaying((v) => !v)}
+          boardTiles={tiles}
+          score={score}
+        />
+
 
         <WalletPanel
           walletAddress={walletAddr}
