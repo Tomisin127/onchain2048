@@ -1,4 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { AIModePanel } from '@/components/AIModePanel';
+import { bestMove, tilesToGrid } from '@/lib/ai2048';
 import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
 import { ethers } from 'ethers';
 import { useBaseSubAccount } from '@/hooks/useBaseSubAccount';
@@ -88,8 +90,17 @@ export default function Game2048Page() {
   const [b20Allowance, setB20Allowance] = useState<bigint>(BigInt(0));
   const [onchainScore, setOnchainScore] = useState<number | null>(null);
 
-  const { playMoveSound, playMilestoneSound } = useGameSounds();
+  const { playMoveSound, playMergeNote, playMilestoneSound, resetMelody } = useGameSounds();
   const milestoneTilesRef = useRef<Set<string>>(new Set());
+  const prevTileValuesRef = useRef<number[]>([]);
+  const [moveCount, setMoveCount] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    return parseInt(localStorage.getItem('ai2048_move_count') || '0', 10);
+  });
+  const AI_UNLOCK_MOVES = 100;
+  const isAIUnlocked = moveCount >= AI_UNLOCK_MOVES;
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false);
+  const autoPlayRef = useRef(false);
 
   // Get embedded wallet address
   useEffect(() => {
