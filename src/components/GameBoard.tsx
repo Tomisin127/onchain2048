@@ -1,11 +1,11 @@
 import { motion } from 'framer-motion';
 import { TileData } from '@/types/game';
 
-const CELL_SIZE = 68; // px per cell
+const DEFAULT_CELL_SIZE = 68; // px per cell
 const GAP = 10; // px gap
 
-function getTilePosition(index: number): number {
-  return index * (CELL_SIZE + GAP);
+function getTilePosition(index: number, cellSize: number): number {
+  return index * (cellSize + GAP);
 }
 
 function getTileColorClass(value: number): string {
@@ -35,13 +35,16 @@ interface GameBoardProps {
   tiles: TileData[];
   onTouchStart: (e: React.TouchEvent) => void;
   onTouchEnd: (e: React.TouchEvent) => void;
+  cellSize?: number;
 }
 
-export function GameBoard({ tiles, onTouchStart, onTouchEnd }: GameBoardProps) {
+export function GameBoard({ tiles, onTouchStart, onTouchEnd, cellSize = DEFAULT_CELL_SIZE }: GameBoardProps) {
+  const boardSize = cellSize * 4 + GAP * 5;
+
   return (
     <div
-      className="relative bg-game-board rounded-2xl p-3 touch-none select-none"
-      style={{ width: CELL_SIZE * 4 + GAP * 5, height: CELL_SIZE * 4 + GAP * 5, padding: GAP }}
+      className="relative bg-game-board rounded-2xl touch-none select-none"
+      style={{ width: boardSize, height: boardSize, padding: GAP }}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
@@ -54,10 +57,10 @@ export function GameBoard({ tiles, onTouchStart, onTouchEnd }: GameBoardProps) {
             key={`cell-${i}`}
             className="absolute rounded-xl bg-game-cell"
             style={{
-              width: CELL_SIZE,
-              height: CELL_SIZE,
-              left: GAP + getTilePosition(col),
-              top: GAP + getTilePosition(row),
+              width: cellSize,
+              height: cellSize,
+              left: GAP + getTilePosition(col, cellSize),
+              top: GAP + getTilePosition(row, cellSize),
             }}
           />
         );
@@ -69,27 +72,27 @@ export function GameBoard({ tiles, onTouchStart, onTouchEnd }: GameBoardProps) {
           key={tile.id}
           className={`absolute rounded-xl flex items-center justify-center font-display font-bold text-foreground shadow-lg ${getTileColorClass(tile.value)} ${getFontSize(tile.value)} ${tile.value === 2048 ? 'ring-2 ring-tile-2048' : ''}`}
           style={{
-            width: CELL_SIZE,
-            height: CELL_SIZE,
+            width: cellSize,
+            height: cellSize,
           }}
           initial={
             tile.isNew
               ? {
-                  left: GAP + getTilePosition(tile.col),
-                  top: GAP + getTilePosition(tile.row),
+                  left: GAP + getTilePosition(tile.col, cellSize),
+                  top: GAP + getTilePosition(tile.row, cellSize),
                   scale: 0,
                   opacity: 0,
                 }
               : {
-                  left: GAP + getTilePosition(tile.previousCol),
-                  top: GAP + getTilePosition(tile.previousRow),
+                  left: GAP + getTilePosition(tile.previousCol, cellSize),
+                  top: GAP + getTilePosition(tile.previousRow, cellSize),
                   scale: 1,
                   opacity: 1,
                 }
           }
           animate={{
-            left: GAP + getTilePosition(tile.col),
-            top: GAP + getTilePosition(tile.row),
+            left: GAP + getTilePosition(tile.col, cellSize),
+            top: GAP + getTilePosition(tile.row, cellSize),
             scale: tile.isMerged ? [1, 1.15, 1] : tile.isNew ? [0, 1.05, 1] : 1,
             opacity: 1,
           }}
