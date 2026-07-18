@@ -1,6 +1,8 @@
-import { Card } from '@/components/ui/card';
+import { useState } from 'react';
+import { Copy, Check, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ExportWalletButton } from '@/components/ExportWalletButton';
+import { cn } from '@/lib/utils';
 
 interface WalletPanelProps {
   walletAddress: string;
@@ -17,6 +19,11 @@ interface WalletPanelProps {
   onchainScore?: number | null;
 }
 
+function shortAddr(a: string) {
+  if (!a) return '';
+  return `${a.slice(0, 6)}…${a.slice(-4)}`;
+}
+
 export function WalletPanel({
   walletAddress,
   balance,
@@ -29,72 +36,72 @@ export function WalletPanel({
   showExport = false,
   b20Balance = '0',
   paymentToken = 'ETH',
-  onchainScore = null,
 }: WalletPanelProps) {
   const actualMoves = remainingMoves - optimisticMovesUsed;
   const balanceUsd = (parseFloat(balance) * ethPrice).toFixed(2);
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(walletAddress);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {}
+  };
 
   return (
-    <Card className="p-4 space-y-3 glass-card">
-      <div className="flex justify-between items-center">
-        <span className="text-sm text-muted-foreground font-body">Wallet Balance</span>
-        <div className="flex gap-2">
-          {showExport && <ExportWalletButton />}
-          <Button
-            onClick={onRefresh}
-            variant="outline"
-            size="sm"
-            disabled={isRefreshing}
-            className="border-border bg-secondary text-secondary-foreground hover:bg-muted"
-          >
-            {isRefreshing ? '⟳' : '↻'}
-          </Button>
-        </div>
+    <div className="glass-card rounded-xl px-3 py-2.5 flex items-center gap-3">
+      {/* Address + copy */}
+      <button
+        onClick={copy}
+        className="flex items-center gap-1.5 text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
+        aria-label="Copy wallet address"
+      >
+        {shortAddr(walletAddress)}
+        {copied ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
+      </button>
+
+      <div className="h-6 w-px bg-border" />
+
+      {/* Balances */}
+      <div className="flex-1 min-w-0 flex items-baseline gap-2 truncate">
+        <span className="text-sm font-display font-semibold text-foreground">
+          {parseFloat(balance).toFixed(4)}
+        </span>
+        <span className="text-[10px] text-muted-foreground">ETH</span>
+        <span className="text-sm font-display font-semibold text-foreground">{b20Balance}</span>
+        <span className="text-[10px] text-muted-foreground">B20</span>
       </div>
 
-      <div className="text-xs font-mono text-muted-foreground break-all">
-        {walletAddress}
+      {/* Moves left */}
+      <div className="text-right shrink-0">
+        <div className={cn(
+          'text-sm font-display font-bold',
+          actualMoves <= 3 ? 'text-destructive' : 'text-foreground'
+        )}>
+          {actualMoves}
+          <span className="text-[10px] text-muted-foreground font-body ml-1">
+            {paymentToken === 'B20' ? 'B20' : 'ETH'}
+          </span>
+        </div>
+        {pendingTransactions.length > 0 && (
+          <div className="text-[9px] text-muted-foreground">{pendingTransactions.length} pending</div>
+        )}
       </div>
 
-      <div className="flex justify-between items-center">
-        <div>
-          <div className="text-xl font-display font-bold text-foreground">
-            {parseFloat(balance).toFixed(6)} ETH
-          </div>
-          <div className="text-sm text-muted-foreground">≈ ${balanceUsd}</div>
-          <div className="text-sm text-foreground mt-1">
-            {b20Balance} <span className="text-muted-foreground">$B20</span>
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-sm text-muted-foreground">Moves Left</div>
-          <div className="text-2xl font-display font-bold text-foreground">
-            {actualMoves}
-            {pendingTransactions.length > 0 && (
-              <span className="text-xs text-muted-foreground ml-2 block">
-                ({pendingTransactions.length} pending)
-              </span>
-            )}
-          </div>
-          <div className="text-xs text-muted-foreground mt-1">
-            Paying in <span className="text-foreground font-semibold">{paymentToken === 'B20' ? '$B20' : 'ETH'}</span>
-          </div>
-          {onchainScore !== null && (
-            <div className="text-xs text-muted-foreground mt-1">
-              On-chain: <span className="text-foreground font-mono">{onchainScore}</span>
-            </div>
-          )}
-        </div>
+      <div className="flex items-center gap-1 shrink-0">
+        {showExport && <ExportWalletButton />}
+        <Button
+          onClick={onRefresh}
+          variant="ghost"
+          size="icon"
+          disabled={isRefreshing}
+          className="h-7 w-7"
+          aria-label="Refresh balance"
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
+        </Button>
       </div>
-
-      {actualMoves <= 3 && (
-        <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 p-3 rounded-lg">
-          {actualMoves <= 0
-            ? 'Fund your wallet to continue playing'
-            : `Low balance! Only ${actualMoves} move${actualMoves === 1 ? '' : 's'} remaining. Fund your wallet to continue.`
-          }
-        </div>
-      )}
-    </Card>
+    </div>
   );
 }
