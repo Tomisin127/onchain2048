@@ -93,14 +93,27 @@ export default function Game2048Page() {
   const { playMoveSound, playMergeNote, playMilestoneSound, resetMelody } = useGameSounds();
   const milestoneTilesRef = useRef<Set<string>>(new Set());
   const prevTileValuesRef = useRef<number[]>([]);
-  const [moveCount, setMoveCount] = useState<number>(() => {
-    if (typeof window === 'undefined') return 0;
-    return parseInt(localStorage.getItem('ai2048_move_count') || '0', 10);
-  });
+  // AI tier system: manual moves fill the ring; every 100 manual moves unlock
+  // a batch of AI auto-moves (10 → 15 → 20 → …, +5 per tier).
   const AI_UNLOCK_MOVES = 100;
-  const isAIUnlocked = moveCount >= AI_UNLOCK_MOVES;
+  const [aiTier, setAiTier] = useState<number>(() => {
+    if (typeof window === 'undefined') return 1;
+    return Math.max(1, parseInt(localStorage.getItem('ai2048_tier') || '1', 10));
+  });
+  const [cycleProgress, setCycleProgress] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    return parseInt(localStorage.getItem('ai2048_cycle') || '0', 10);
+  });
+  const [aiMovesRemaining, setAiMovesRemaining] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    return parseInt(localStorage.getItem('ai2048_ai_left') || '0', 10);
+  });
+  const aiMovesAllowed = 10 + (aiTier - 1) * 5;
+  const isAIUnlocked = cycleProgress >= AI_UNLOCK_MOVES && aiMovesRemaining > 0;
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const autoPlayRef = useRef(false);
+  const isAutoMoveRef = useRef(false);
+
 
   // Get embedded wallet address
   useEffect(() => {
