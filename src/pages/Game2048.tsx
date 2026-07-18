@@ -646,8 +646,8 @@ export default function Game2048Page() {
       if (!provider || !address) {
         throw new Error('Connect a wallet with an EIP-1193 provider to pay via x402.');
       }
-      const { askVeniceAdvisor } = await import('@/lib/veniceAdvisor');
-      const result = await askVeniceAdvisor({ provider, address, grid, score });
+      const { askX402Advisor } = await import('@/lib/x402Advisor');
+      const result = await askX402Advisor({ provider, address, grid, score });
       return { direction: result.direction, reason: result.reason };
     } catch (err) {
       throw err;

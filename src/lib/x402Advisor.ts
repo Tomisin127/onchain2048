@@ -5,7 +5,18 @@ import { registerExactEvmScheme } from '@x402/evm/exact/client';
 import type { ClientEvmSigner } from '@x402/evm';
 import { Direction } from '@/types/game';
 
-const VENICE_URL = 'https://api.venice.ai/api/v1/chat/completions';
+// tx402.ai is an x402 v2 gateway that gates its OpenAI-compatible
+// /v1/chat/completions endpoint with a *per-request* 402 challenge, settling
+// USDC on Base (eip155:8453). This is different from Venice, which only accepts
+// the payment header on its /x402/top-up route and then wants a SIGN-IN-WITH-X
+// session header for inference — a two-step model that does not fit a simple
+// pay-as-you-go advisor. tx402.ai returns the 402 directly on the inference
+// call, which is exactly what wrapFetchWithPayment expects.
+const X402_URL = 'https://tx402.ai/v1/chat/completions';
+
+// Cheapest model on the gateway with a huge context window — plenty for a tiny
+// JSON move decision. See GET https://tx402.ai/v1/models for the live list.
+const MODEL = 'minimax';
 
 export interface AdvisorResult {
   direction: Direction | null;
@@ -14,16 +25,14 @@ export interface AdvisorResult {
 }
 
 /**
- * Ask the Venice AI advisor for the best next move, paying via x402 (USDC on Base)
- * from the caller's connected wallet.
+ * Ask an x402-gated AI advisor for the best next move, paying per request via
+ * x402 (USDC on Base) from the caller's connected wallet.
  *
  * Uses the x402 **v2** protocol (`@x402/fetch` + `@x402/evm`). v2 speaks CAIP-2
- * network identifiers (e.g. `eip155:8453` for Base mainnet), which is what
- * Venice's paid endpoint now advertises in its 402 challenge. The old v1
- * `x402-fetch` package only understood the legacy `base` string and rejected
- * the `eip155:8453` response with an "invalid enum value" error.
+ * network identifiers (e.g. `eip155:8453` for Base mainnet), which is what the
+ * gateway advertises in its 402 challenge.
  */
-export async function askVeniceAdvisor(opts: {
+export async function askX402Advisor(opts: {
   provider: EIP1193Provider;
   address: `0x${string}`;
   grid: number[][];
@@ -73,22 +82,25 @@ export async function askVeniceAdvisor(opts: {
 
   const userMsg = `Score: ${score}\nBoard (rows top→bottom, empty = .):\n${boardText}\n\nReturn the best move as JSON.`;
 
-  const res = await fetchWithPay(VENICE_URL, {
+  const res = await fetchWithPay(X402_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'llama-3.3-70b',
+      model: MODEL,
       messages: [
         { role: 'system', content: systemMsg },
         { role: 'user', content: userMsg },
       ],
       temperature: 0.2,
+      // Cap output tokens to keep the per-request USDC cost tiny — we only need
+      // a short JSON object back.
+      max_tokens: 150,
     }),
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`Venice ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`x402 advisor ${res.status}: ${text.slice(0, 200)}`);
   }
 
   const data = await res.json();
