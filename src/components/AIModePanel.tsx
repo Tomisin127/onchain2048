@@ -48,12 +48,14 @@ export function AIModePanel({
     ? (autoPlaySeconds > 0 ? Math.min(100, (secondsLeft / autoPlaySeconds) * 100) : 0)
     : Math.min(100, (cycleProgress / unlockAt) * 100);
 
-  // Circular ring math
+  // Boxed (robot-head) progress math. We normalize the rounded-rectangle
+  // outline to a pathLength of 100 so the stroke offset maps directly to the
+  // percentage, no perimeter arithmetic required.
   const size = 56;
   const stroke = 4;
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const dash = (pct / 100) * circ;
+  const inset = stroke / 2;
+  const boxSide = size - stroke;
+  const boxRadius = 14;
 
   const handleClickRing = () => {
     if (!isUnlocked) return;
@@ -96,38 +98,47 @@ export function AIModePanel({
                 : 'Start AI auto-play'
           }
           className={cn(
-            'relative shrink-0 rounded-full transition-transform',
+            'relative shrink-0 rounded-xl transition-transform',
             isUnlocked && 'hover:scale-105 active:scale-95 cursor-pointer',
             !isUnlocked && 'cursor-not-allowed',
             isAutoPlaying && 'animate-pulse-glow',
           )}
           style={{ width: size, height: size }}
         >
-          <svg width={size} height={size} className="-rotate-90">
+          <svg width={size} height={size}>
             <defs>
               <linearGradient id="aiGradient" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stopColor="hsl(var(--game-gradient-start))" />
                 <stop offset="100%" stopColor="hsl(var(--game-gradient-end))" />
               </linearGradient>
             </defs>
-            <circle
-              cx={size / 2}
-              cy={size / 2}
-              r={r}
+            {/* Boxed robot-head track */}
+            <rect
+              x={inset}
+              y={inset}
+              width={boxSide}
+              height={boxSide}
+              rx={boxRadius}
+              ry={boxRadius}
               fill="none"
               stroke="hsl(var(--secondary))"
               strokeWidth={stroke}
             />
-            <circle
-              cx={size / 2}
-              cy={size / 2}
-              r={r}
+            {/* Progress outline (pathLength normalized to 100) */}
+            <rect
+              x={inset}
+              y={inset}
+              width={boxSide}
+              height={boxSide}
+              rx={boxRadius}
+              ry={boxRadius}
               fill="none"
               stroke={ringColor}
               strokeWidth={stroke}
               strokeLinecap="round"
-              strokeDasharray={circ}
-              strokeDashoffset={circ - dash}
+              pathLength={100}
+              strokeDasharray={100}
+              strokeDashoffset={100 - pct}
               className="transition-all duration-500"
             />
           </svg>
@@ -172,7 +183,7 @@ export function AIModePanel({
               <Sparkles className="h-5 w-5 text-primary" /> AI Advisor
             </DialogTitle>
             <DialogDescription className="font-body text-xs">
-              Paid via x402 (USDC on Base) from your connected wallet.
+              Powered by BlockRun · paid via x402 (USDC on Base) from your connected wallet.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-[100px] text-sm font-body">

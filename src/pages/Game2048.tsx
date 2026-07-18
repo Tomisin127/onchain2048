@@ -746,7 +746,7 @@ export default function Game2048Page() {
         {/* Compact header: title + user, inline scores, disconnect */}
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-3xl font-display font-bold gradient-text leading-none">2048</h1>
+            <h1 className="text-4xl font-display font-bold gradient-text leading-none">2048</h1>
             <p className="text-[11px] text-muted-foreground font-mono truncate">
               {userDisplay} · {connectionType}
             </p>

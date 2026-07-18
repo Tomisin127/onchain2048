@@ -11,6 +11,17 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    proxy: {
+      // Transparent reverse proxy to BlockRun's x402 AI gateway so the browser
+      // talks to a same-origin path (no CORS). Mirrors the Vercel rewrite in
+      // vercel.json used in production.
+      "/x402/blockrun": {
+        target: "https://blockrun.ai/api/v1",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (p) => p.replace(/^\/x402\/blockrun/, ""),
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

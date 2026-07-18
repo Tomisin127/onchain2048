@@ -5,16 +5,24 @@ import { registerExactEvmScheme } from '@x402/evm/exact/client';
 import type { ClientEvmSigner } from '@x402/evm';
 import { Direction } from '@/types/game';
 
-// tx402.ai is an x402 v2 gateway that gates its OpenAI-compatible
-// /v1/chat/completions endpoint with a *per-request* 402 challenge, settling
-// USDC on Base (eip155:8453). It returns the 402 directly on the inference call,
-// which is exactly what wrapFetchWithPayment expects — a true pay-as-you-go
-// model that needs no account, API key, or session handshake.
-const X402_URL = 'https://tx402.ai/v1/chat/completions';
+// BlockRun (https://blockrun.ai) is an x402 v2 AI gateway that gates its
+// OpenAI-compatible /api/v1/chat/completions endpoint with a *per-request* 402
+// challenge, settling USDC on Base (eip155:8453) through the Coinbase CDP
+// facilitator. It returns the 402 directly on the inference call — exactly what
+// wrapFetchWithPayment expects — with no account, API key, or session handshake.
+//
+// BlockRun does NOT send CORS headers, so the browser cannot call blockrun.ai
+// directly (the request fails and you get a blank result). Instead we hit a
+// SAME-ORIGIN path that is transparently reverse-proxied to
+// https://blockrun.ai/api/v1/* — via a Vercel rewrite in production and a Vite
+// dev-server proxy locally (see vercel.json and vite.config.ts). Because it is
+// same-origin there is no CORS/preflight at all, while the wallet still signs
+// the x402 payment on the client.
+const X402_URL = '/x402/blockrun/chat/completions';
 
-// Cheapest model on the gateway with a huge context window — plenty for a tiny
-// JSON move decision. See GET https://tx402.ai/v1/models for the live list.
-const MODEL = 'minimax';
+// Cheap, fast model that reliably emits strict JSON — plenty for a tiny move
+// decision. See GET /x402/blockrun/models (proxied) for the live list.
+const MODEL = 'openai/gpt-4o-mini';
 
 export interface AdvisorResult {
   direction: Direction | null;
