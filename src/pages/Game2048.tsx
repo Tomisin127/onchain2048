@@ -646,8 +646,8 @@ export default function Game2048Page() {
       if (!provider || !address) {
         throw new Error('Connect a wallet with an EIP-1193 provider to pay via x402.');
       }
-      const { askVeniceAdvisor } = await import('@/lib/veniceAdvisor');
-      const result = await askVeniceAdvisor({ provider, address, grid, score });
+      const { askX402Advisor } = await import('@/lib/x402Advisor');
+      const result = await askX402Advisor({ provider, address, grid, score });
       return { direction: result.direction, reason: result.reason };
     } catch (err) {
       throw err;
@@ -732,7 +732,7 @@ export default function Game2048Page() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 pt-8">
+    <div className="h-[100dvh] overflow-hidden bg-background px-4 py-3 flex flex-col">
       <SwapModal 
         walletAddress={walletAddr} 
         onSwapSuccess={handleRefreshBalance}
@@ -742,11 +742,11 @@ export default function Game2048Page() {
         embeddedWalletAddress={isSelfPayConnected ? '' : embeddedWalletAddress}
       />
       
-      <div className="max-w-lg mx-auto space-y-3 animate-fade-in">
+      <div className="max-w-lg w-full mx-auto flex flex-col gap-2 animate-fade-in min-h-0 flex-1">
         {/* Compact header: title + user, inline scores, disconnect */}
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-4xl font-display font-bold gradient-text leading-none">2048</h1>
+            <h1 className="text-3xl font-display font-bold gradient-text leading-none">2048</h1>
             <p className="text-[11px] text-muted-foreground font-mono truncate">
               {userDisplay} · {connectionType}
             </p>
@@ -801,7 +801,7 @@ export default function Game2048Page() {
           onchainScore={onchainScore}
         />
 
-        <Card className="p-3 glass-card flex flex-col items-center">
+        <Card className="p-2.5 glass-card flex flex-col items-center">
           <GameBoard
             tiles={tiles}
             onTouchStart={handleTouchStart}
@@ -809,20 +809,20 @@ export default function Game2048Page() {
           />
 
           {gameOver && (
-            <div className="text-center mt-3">
-              <div className="text-lg font-display font-bold text-destructive">Game Over</div>
+            <div className="text-center mt-2">
+              <div className="text-base font-display font-bold text-destructive">Game Over</div>
             </div>
           )}
 
           <Button
             onClick={handleNewGame}
-            className="w-full mt-3 gradient-btn text-foreground font-display font-semibold h-9"
+            className="w-full mt-2 gradient-btn text-foreground font-display font-semibold h-8"
             disabled={isProcessing}
           >
             New Game
           </Button>
 
-          <p className="text-[10px] text-center text-muted-foreground mt-2 font-body">
+          <p className="text-[10px] text-center text-muted-foreground mt-1.5 font-body">
             Swipe or arrows · 10 $B20 or {MOVE_COST_ETH} ETH per move
           </p>
         </Card>

@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
 import { TileData } from '@/types/game';
 
-const CELL_SIZE = 76; // px per cell
-const GAP = 12; // px gap
+const CELL_SIZE = 68; // px per cell
+const GAP = 10; // px gap
 
 function getTilePosition(index: number): number {
   return index * (CELL_SIZE + GAP);

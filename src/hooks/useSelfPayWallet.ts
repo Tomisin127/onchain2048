@@ -23,6 +23,46 @@ const BASE_RPC_URLS = [
 const baseTransport = () =>
   fallback(BASE_RPC_URLS.map((url) => http(url, { timeout: 15000, retryCount: 1 })));
 
+// Base Mainnet chain id (8453) in hex, used for wallet_switchEthereumChain.
+const BASE_CHAIN_ID_HEX = '0x2105';
+
+// Ensure the injected wallet is on Base before sending a transaction. If the
+// wallet sits on another chain (e.g. Ethereum mainnet), a value-0 contract call
+// would try to execute there and fail with a confusing "not enough gas" error.
+async function ensureBaseChain(activeProvider: any): Promise<void> {
+  if (!activeProvider?.request) return;
+  try {
+    const currentChain = (await activeProvider.request({ method: 'eth_chainId' })) as string;
+    if (currentChain?.toLowerCase() === BASE_CHAIN_ID_HEX) return;
+  } catch {
+    // If we can't read the chain, still attempt to switch below.
+  }
+  try {
+    await activeProvider.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: BASE_CHAIN_ID_HEX }],
+    });
+  } catch (switchErr: any) {
+    // 4902 = chain not added to the wallet yet; add it then it becomes active.
+    if (switchErr?.code === 4902 || /Unrecognized chain/i.test(switchErr?.message || '')) {
+      await activeProvider.request({
+        method: 'wallet_addEthereumChain',
+        params: [
+          {
+            chainId: BASE_CHAIN_ID_HEX,
+            chainName: 'Base',
+            nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+            rpcUrls: ['https://mainnet.base.org'],
+            blockExplorerUrls: ['https://basescan.org'],
+          },
+        ],
+      });
+    } else {
+      throw switchErr;
+    }
+  }
+}
+
 // Public client for balance checks
 const publicClient = createPublicClient({
   chain: base,
@@ -88,6 +128,10 @@ export function useSelfPayWallet() {
       })) as string[];
 
       if (!accounts?.length) throw new Error('No accounts returned');
+
+      // Make sure the injected wallet is on Base so subsequent contract calls
+      // (moves, new game) execute on the correct chain instead of failing on gas.
+      await ensureBaseChain(activeProvider);
 
       const primaryAddr = accounts[0];
       setAddress(primaryAddr);
@@ -187,6 +231,9 @@ export function useSelfPayWallet() {
         if (!provider || !address) {
           throw new Error('Wallet not connected');
         }
+
+        // Guarantee we're on Base before prompting the wallet.
+        await ensureBaseChain(provider);
 
         // Send payment to the recipient address with builder code - this will trigger wallet popup
         // Let the wallet handle balance/gas validation instead of pre-checking
@@ -299,6 +346,11 @@ export function useSelfPayWallet() {
         if (!provider || !address) {
           throw new Error('Wallet not connected');
         }
+
+        // Guarantee we're on Base before prompting the wallet, otherwise a
+        // value-0 contract call (e.g. startNewGame) tries to run on whatever
+        // chain the wallet is on and fails with a misleading gas error.
+        await ensureBaseChain(provider);
 
         const txParams: Record<string, string> = {
           from: address,

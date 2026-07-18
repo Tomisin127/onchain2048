@@ -147,10 +147,10 @@ export function AIModePanel({
           </div>
           <div className="text-[11px] text-muted-foreground font-mono truncate">
             {isAutoPlaying
-              ? `Playing… ${aiMovesRemaining}/${aiMovesAllowed} left · ${countdown}s`
+              ? `Playing… ${secondsLeft}s left`
               : isUnlocked
-                ? `Tap to auto-play ${aiMovesAllowed} moves`
-                : `${cycleProgress}/${unlockAt} · unlocks ${aiMovesAllowed} moves`}
+                ? `Tap to auto-play ${autoPlaySeconds}s`
+                : `${cycleProgress}/${unlockAt} · unlocks ${autoPlaySeconds}s`}
           </div>
         </div>
 
