@@ -9,7 +9,7 @@ import type { SpendPermissionValues } from '@/components/SpendPermissionConfig';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { GameBoard } from '@/components/GameBoard';
-import { ScorePanel } from '@/components/ScorePanel';
+
 import { WalletPanel } from '@/components/WalletPanel';
 import { LoginScreen } from '@/components/LoginScreen';
 import { SwapModal } from '@/components/SwapModal';
@@ -93,14 +93,27 @@ export default function Game2048Page() {
   const { playMoveSound, playMergeNote, playMilestoneSound, resetMelody } = useGameSounds();
   const milestoneTilesRef = useRef<Set<string>>(new Set());
   const prevTileValuesRef = useRef<number[]>([]);
-  const [moveCount, setMoveCount] = useState<number>(() => {
-    if (typeof window === 'undefined') return 0;
-    return parseInt(localStorage.getItem('ai2048_move_count') || '0', 10);
-  });
+  // AI tier system: manual moves fill the ring; every 100 manual moves unlock
+  // a batch of AI auto-moves (10 → 15 → 20 → …, +5 per tier).
   const AI_UNLOCK_MOVES = 100;
-  const isAIUnlocked = moveCount >= AI_UNLOCK_MOVES;
+  const [aiTier, setAiTier] = useState<number>(() => {
+    if (typeof window === 'undefined') return 1;
+    return Math.max(1, parseInt(localStorage.getItem('ai2048_tier') || '1', 10));
+  });
+  const [cycleProgress, setCycleProgress] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    return parseInt(localStorage.getItem('ai2048_cycle') || '0', 10);
+  });
+  const [aiMovesRemaining, setAiMovesRemaining] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    return parseInt(localStorage.getItem('ai2048_ai_left') || '0', 10);
+  });
+  const aiMovesAllowed = 10 + (aiTier - 1) * 5;
+  const isAIUnlocked = cycleProgress >= AI_UNLOCK_MOVES && aiMovesRemaining > 0;
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const autoPlayRef = useRef(false);
+  const isAutoMoveRef = useRef(false);
+
 
   // Get embedded wallet address
   useEffect(() => {
@@ -264,8 +277,9 @@ export default function Game2048Page() {
     if (tiles.some((t) => t.isMerged)) playMergeNote();
   }, [tiles, playMergeNote]);
 
-  // Track completed moves: gameMakeMove spawns exactly 1 new tile per valid move,
-  // so a bump in the max tile id maps 1-to-1 with a successful move.
+  // Track completed moves. Auto-moves (AI) burn from aiMovesRemaining; manual
+  // moves fill cycleProgress until it reaches AI_UNLOCK_MOVES, which grants a
+  // batch of aiMovesAllowed AI moves.
   const lastMaxTileIdRef = useRef(0);
   useEffect(() => {
     if (tiles.length === 0) return;
@@ -277,14 +291,28 @@ export default function Game2048Page() {
     if (maxId > lastMaxTileIdRef.current) {
       const delta = maxId - lastMaxTileIdRef.current;
       lastMaxTileIdRef.current = maxId;
-      setMoveCount((c) => c + delta);
+      if (isAutoMoveRef.current) {
+        setAiMovesRemaining((n) => Math.max(0, n - delta));
+      } else {
+        setCycleProgress((c) => {
+          const next = Math.min(AI_UNLOCK_MOVES, c + delta);
+          // Just filled the ring: award AI moves for this tier.
+          if (c < AI_UNLOCK_MOVES && next >= AI_UNLOCK_MOVES) {
+            setAiMovesRemaining(aiMovesAllowed);
+          }
+          return next;
+        });
+      }
     }
-  }, [tiles]);
+  }, [tiles, aiMovesAllowed]);
 
-  // Persist move count for the AI-mode progress bar
+  // Persist tier progress
   useEffect(() => {
-    localStorage.setItem('ai2048_move_count', String(moveCount));
-  }, [moveCount]);
+    localStorage.setItem('ai2048_tier', String(aiTier));
+    localStorage.setItem('ai2048_cycle', String(cycleProgress));
+    localStorage.setItem('ai2048_ai_left', String(aiMovesRemaining));
+  }, [aiTier, cycleProgress, aiMovesRemaining]);
+
 
   // Check milestones
   const checkMilestones = useCallback(() => {
@@ -549,22 +577,60 @@ export default function Game2048Page() {
   const makeMoveRef = useRef(makeMove);
   makeMoveRef.current = makeMove;
 
-  // AI auto-play loop: every ~900ms, pick the best move for the current board.
+  // AI auto-play loop: burns from aiMovesRemaining, stops on 0, and advances
+  // the tier so the next cycle demands another 100 manual moves for +5 AI moves.
   useEffect(() => {
     autoPlayRef.current = isAutoPlaying;
     if (!isAutoPlaying) return;
-    const id = setInterval(() => {
+    const id = setInterval(async () => {
       if (!autoPlayRef.current) return;
-      if (gameOver) {
+      if (gameOver) { setIsAutoPlaying(false); return; }
+      if (aiMovesRemaining <= 0) {
         setIsAutoPlaying(false);
+        // Advance to next tier + reset cycle so the ring greys out again.
+        setAiTier((t) => t + 1);
+        setCycleProgress(0);
         return;
       }
       const grid = tilesToGrid(tiles);
       const dir = bestMove(grid);
-      if (dir) void makeMoveRef.current(dir);
+      if (dir) {
+        isAutoMoveRef.current = true;
+        try { await makeMoveRef.current(dir); }
+        finally { isAutoMoveRef.current = false; }
+      }
     }, 900);
     return () => clearInterval(id);
-  }, [isAutoPlaying, tiles, gameOver]);
+  }, [isAutoPlaying, tiles, gameOver, aiMovesRemaining]);
+
+  // Advisor: sends the current board to Venice AI, paid via x402 with USDC
+  // from the connected wallet's EIP-1193 provider.
+  const askAdvisor = useCallback(async () => {
+    try {
+      const grid = tilesToGrid(tiles);
+      let provider: any = null;
+      let address: `0x${string}` | null = null;
+      if (authenticated) {
+        const embedded = wallets.find(w => w.walletClientType === 'privy');
+        if (embedded) {
+          provider = await embedded.getEthereumProvider();
+          address = embedded.address as `0x${string}`;
+        }
+      } else if (typeof window !== 'undefined' && (window as any).ethereum) {
+        provider = (window as any).ethereum;
+        address = (baseAddress || selfPayAddress || '') as `0x${string}`;
+      }
+      if (!provider || !address) {
+        throw new Error('Connect a wallet with an EIP-1193 provider to pay via x402.');
+      }
+      const { askVeniceAdvisor } = await import('@/lib/veniceAdvisor');
+      const result = await askVeniceAdvisor({ provider, address, grid, score });
+      return { direction: result.direction, reason: result.reason };
+    } catch (err) {
+      throw err;
+    }
+  }, [tiles, score, authenticated, wallets, baseAddress, selfPayAddress]);
+
 
   const isConnected = authenticated || isBaseConnected || isSelfPayConnected;
 
@@ -653,34 +719,49 @@ export default function Game2048Page() {
         embeddedWalletAddress={isSelfPayConnected ? '' : embeddedWalletAddress}
       />
       
-      <div className="max-w-lg mx-auto space-y-4 animate-fade-in">
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-4xl font-display font-bold gradient-text">2048</h1>
-            <p className="text-sm text-muted-foreground mt-1 font-body">{userDisplay}</p>
-            <p className="text-xs text-muted-foreground font-mono">{connectionType}</p>
+      <div className="max-w-lg mx-auto space-y-3 animate-fade-in">
+        {/* Compact header: title + user, inline scores, disconnect */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-display font-bold gradient-text leading-none">2048</h1>
+            <p className="text-[11px] text-muted-foreground font-mono truncate">
+              {userDisplay} · {connectionType}
+            </p>
           </div>
-          <Button
-            onClick={handleDisconnect}
-            variant="outline"
-            className="border-border bg-secondary text-secondary-foreground hover:bg-muted font-body"
-          >
-            Disconnect
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="glass-card rounded-lg px-2.5 py-1 text-center">
+              <div className="text-[9px] uppercase tracking-wider text-muted-foreground leading-none">Score</div>
+              <div className="text-sm font-display font-bold text-foreground leading-tight">{score}</div>
+            </div>
+            <div className="glass-card rounded-lg px-2.5 py-1 text-center">
+              <div className="text-[9px] uppercase tracking-wider text-muted-foreground leading-none">Best</div>
+              <div className="text-sm font-display font-bold text-foreground leading-tight">{highScore}</div>
+            </div>
+            <Button
+              onClick={handleDisconnect}
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              Exit
+            </Button>
+          </div>
         </div>
 
-        <ScorePanel score={score} highScore={highScore} />
-
-        <AIModePanel
-          moveCount={moveCount}
-          unlockAt={AI_UNLOCK_MOVES}
-          isUnlocked={isAIUnlocked}
-          isAutoPlaying={isAutoPlaying}
-          onToggleAutoPlay={() => setIsAutoPlaying((v) => !v)}
-          boardTiles={tiles}
-          score={score}
-        />
-
+        {/* AI ring + advisor */}
+        <div className="glass-card rounded-xl px-3 py-2.5">
+          <AIModePanel
+            cycleProgress={cycleProgress}
+            unlockAt={AI_UNLOCK_MOVES}
+            isUnlocked={isAIUnlocked}
+            isAutoPlaying={isAutoPlaying}
+            tier={aiTier}
+            aiMovesAllowed={aiMovesAllowed}
+            aiMovesRemaining={aiMovesRemaining}
+            onToggleAutoPlay={() => setIsAutoPlaying((v) => !v)}
+            onAskAdvisor={askAdvisor}
+          />
+        </div>
 
         <WalletPanel
           walletAddress={walletAddr}
@@ -697,11 +778,7 @@ export default function Game2048Page() {
           onchainScore={onchainScore}
         />
 
-        <p className="text-xs text-center text-muted-foreground -mt-2 font-body">
-          Move cost: 10 $B20 (when available) or {MOVE_COST_ETH} ETH (~${(MOVE_COST_ETH * ethPrice).toFixed(2)})
-        </p>
-
-        <Card className="p-4 glass-card flex flex-col items-center">
+        <Card className="p-3 glass-card flex flex-col items-center">
           <GameBoard
             tiles={tiles}
             onTouchStart={handleTouchStart}
@@ -709,24 +786,25 @@ export default function Game2048Page() {
           />
 
           {gameOver && (
-            <div className="text-center mt-4">
-              <div className="text-xl font-display font-bold text-destructive">Game Over</div>
+            <div className="text-center mt-3">
+              <div className="text-lg font-display font-bold text-destructive">Game Over</div>
             </div>
           )}
 
           <Button
             onClick={handleNewGame}
-            className="w-full mt-4 gradient-btn text-foreground font-display font-semibold"
+            className="w-full mt-3 gradient-btn text-foreground font-display font-semibold h-9"
             disabled={isProcessing}
           >
             New Game
           </Button>
 
-          <p className="text-xs text-center text-muted-foreground mt-3 font-body">
-            Swipe or use arrow keys • On-chain via 2048 contract
+          <p className="text-[10px] text-center text-muted-foreground mt-2 font-body">
+            Swipe or arrows · 10 $B20 or {MOVE_COST_ETH} ETH per move
           </p>
         </Card>
       </div>
     </div>
   );
 }
+
