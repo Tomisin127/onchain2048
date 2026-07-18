@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { usePrivy, useExportWallet } from '@privy-io/react-auth';
 import { useState } from 'react';
+import { Key, Loader2 } from 'lucide-react';
 
 export function ExportWalletButton() {
   const { user } = usePrivy();
@@ -25,12 +26,13 @@ export function ExportWalletButton() {
   return (
     <Button
       onClick={handleExport}
-      variant="outline"
-      size="sm"
+      variant="ghost"
+      size="icon"
       disabled={isExporting}
-      className="border-border bg-secondary text-secondary-foreground hover:bg-muted text-xs"
+      className="h-7 w-7"
+      aria-label="Export wallet"
     >
-      {isExporting ? 'Exporting...' : '🔑 Export Wallet'}
+      {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Key className="h-3.5 w-3.5" />}
     </Button>
   );
 }

@@ -27,11 +27,11 @@ export async function askVeniceAdvisor(opts: {
     account: address,
     chain: base,
     transport: custom(provider),
-  });
+  }) as any;
 
   // x402-fetch handles 402 responses by signing an EIP-3009 USDC authorization
   // and re-sending the request with the X-PAYMENT header.
-  const fetchWithPay = wrapFetchWithPayment(fetch, walletClient as any);
+  const fetchWithPay = wrapFetchWithPayment(fetch, walletClient);
 
   const boardText = grid
     .map((row) => row.map((v) => (v === 0 ? '.' : String(v)).padStart(4, ' ')).join(' '))
