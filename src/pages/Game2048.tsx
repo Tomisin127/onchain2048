@@ -9,7 +9,7 @@ import type { SpendPermissionValues } from '@/components/SpendPermissionConfig';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { GameBoard } from '@/components/GameBoard';
-import { ScorePanel } from '@/components/ScorePanel';
+
 import { WalletPanel } from '@/components/WalletPanel';
 import { LoginScreen } from '@/components/LoginScreen';
 import { SwapModal } from '@/components/SwapModal';
