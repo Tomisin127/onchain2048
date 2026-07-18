@@ -1,6 +1,8 @@
 import { createWalletClient, custom, type EIP1193Provider } from 'viem';
 import { base } from 'viem/chains';
-import { wrapFetchWithPayment } from 'x402-fetch';
+import { wrapFetchWithPayment, x402Client } from '@x402/fetch';
+import { registerExactEvmScheme } from '@x402/evm/exact/client';
+import type { ClientEvmSigner } from '@x402/evm';
 import { Direction } from '@/types/game';
 
 const VENICE_URL = 'https://api.venice.ai/api/v1/chat/completions';
@@ -13,7 +15,13 @@ export interface AdvisorResult {
 
 /**
  * Ask the Venice AI advisor for the best next move, paying via x402 (USDC on Base)
- * from the caller's connected wallet. Returns a suggested direction plus reasoning.
+ * from the caller's connected wallet.
+ *
+ * Uses the x402 **v2** protocol (`@x402/fetch` + `@x402/evm`). v2 speaks CAIP-2
+ * network identifiers (e.g. `eip155:8453` for Base mainnet), which is what
+ * Venice's paid endpoint now advertises in its 402 challenge. The old v1
+ * `x402-fetch` package only understood the legacy `base` string and rejected
+ * the `eip155:8453` response with an "invalid enum value" error.
  */
 export async function askVeniceAdvisor(opts: {
   provider: EIP1193Provider;
@@ -23,15 +31,36 @@ export async function askVeniceAdvisor(opts: {
 }): Promise<AdvisorResult> {
   const { provider, address, grid, score } = opts;
 
+  // Wrap the connected browser wallet in a viem wallet client so we can sign the
+  // EIP-3009 USDC "transferWithAuthorization" typed data that x402 requires.
   const walletClient = createWalletClient({
     account: address,
     chain: base,
     transport: custom(provider),
-  }) as any;
+  });
 
-  // x402-fetch handles 402 responses by signing an EIP-3009 USDC authorization
-  // and re-sending the request with the X-PAYMENT header.
-  const fetchWithPay = wrapFetchWithPayment(fetch, walletClient);
+  // x402 v2 only needs `address` + `signTypedData` from the buyer's signer.
+  const signer: ClientEvmSigner = {
+    address,
+    signTypedData: (message) =>
+      walletClient.signTypedData({
+        account: address,
+        domain: message.domain,
+        types: message.types as never,
+        primaryType: message.primaryType as never,
+        message: message.message,
+      }),
+  };
+
+  // Build a v2 client and register the EVM "exact" scheme with a wildcard
+  // (`eip155:*`) so it automatically handles whatever EVM network the server
+  // advertises — including Base mainnet (`eip155:8453`).
+  const client = new x402Client();
+  registerExactEvmScheme(client, { signer });
+
+  // Wrapped fetch: on a 402 it parses payment requirements, signs the USDC
+  // authorization, and retries with the PAYMENT-SIGNATURE header.
+  const fetchWithPay = wrapFetchWithPayment(fetch, client);
 
   const boardText = grid
     .map((row) => row.map((v) => (v === 0 ? '.' : String(v)).padStart(4, ' ')).join(' '))

@@ -104,15 +104,40 @@ export default function Game2048Page() {
     if (typeof window === 'undefined') return 0;
     return parseInt(localStorage.getItem('ai2048_cycle') || '0', 10);
   });
-  const [aiMovesRemaining, setAiMovesRemaining] = useState<number>(() => {
-    if (typeof window === 'undefined') return 0;
-    return parseInt(localStorage.getItem('ai2048_ai_left') || '0', 10);
-  });
-  const aiMovesAllowed = 10 + (aiTier - 1) * 5;
-  const isAIUnlocked = cycleProgress >= AI_UNLOCK_MOVES && aiMovesRemaining > 0;
+  // Auto-play is TIME-based: a charged "battery" lets the AI play for a fixed
+  // number of seconds. Finishing a session drains the battery and bumps the
+  // tier (+5s next time). The player recharges by playing manual moves until
+  // the cycle refills, at which point the button unlocks again with more time.
+  const AUTOPLAY_BASE_SECONDS = 10;
+  const autoPlaySeconds = AUTOPLAY_BASE_SECONDS + (aiTier - 1) * 5;
+  const isCharged = cycleProgress >= AI_UNLOCK_MOVES;
+  const isAIUnlocked = isCharged;
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
+  const [autoPlaySecondsLeft, setAutoPlaySecondsLeft] = useState(0);
   const autoPlayRef = useRef(false);
   const isAutoMoveRef = useRef(false);
+
+  // End an auto-play session: stop the loop, drain the battery (reset the
+  // recharge cycle), and advance the tier so the next unlock grants +5s.
+  const endAutoPlaySession = useCallback(() => {
+    autoPlayRef.current = false;
+    setIsAutoPlaying(false);
+    setAutoPlaySecondsLeft(0);
+    setAiTier((t) => t + 1);
+    setCycleProgress(0);
+  }, []);
+
+  // Start (only when charged) or stop the timed auto-play session.
+  const toggleAutoPlay = useCallback(() => {
+    if (autoPlayRef.current) {
+      endAutoPlaySession();
+      return;
+    }
+    if (!isCharged) return;
+    setAutoPlaySecondsLeft(autoPlaySeconds);
+    autoPlayRef.current = true;
+    setIsAutoPlaying(true);
+  }, [endAutoPlaySession, isCharged, autoPlaySeconds]);
 
 
   // Get embedded wallet address
@@ -277,9 +302,8 @@ export default function Game2048Page() {
     if (tiles.some((t) => t.isMerged)) playMergeNote();
   }, [tiles, playMergeNote]);
 
-  // Track completed moves. Auto-moves (AI) burn from aiMovesRemaining; manual
-  // moves fill cycleProgress until it reaches AI_UNLOCK_MOVES, which grants a
-  // batch of aiMovesAllowed AI moves.
+  // Track completed moves. Only MANUAL moves recharge the battery
+  // (cycleProgress → AI_UNLOCK_MOVES); AI auto-moves don't count toward it.
   const lastMaxTileIdRef = useRef(0);
   useEffect(() => {
     if (tiles.length === 0) return;
@@ -291,27 +315,17 @@ export default function Game2048Page() {
     if (maxId > lastMaxTileIdRef.current) {
       const delta = maxId - lastMaxTileIdRef.current;
       lastMaxTileIdRef.current = maxId;
-      if (isAutoMoveRef.current) {
-        setAiMovesRemaining((n) => Math.max(0, n - delta));
-      } else {
-        setCycleProgress((c) => {
-          const next = Math.min(AI_UNLOCK_MOVES, c + delta);
-          // Just filled the ring: award AI moves for this tier.
-          if (c < AI_UNLOCK_MOVES && next >= AI_UNLOCK_MOVES) {
-            setAiMovesRemaining(aiMovesAllowed);
-          }
-          return next;
-        });
+      if (!isAutoMoveRef.current) {
+        setCycleProgress((c) => Math.min(AI_UNLOCK_MOVES, c + delta));
       }
     }
-  }, [tiles, aiMovesAllowed]);
+  }, [tiles]);
 
   // Persist tier progress
   useEffect(() => {
     localStorage.setItem('ai2048_tier', String(aiTier));
     localStorage.setItem('ai2048_cycle', String(cycleProgress));
-    localStorage.setItem('ai2048_ai_left', String(aiMovesRemaining));
-  }, [aiTier, cycleProgress, aiMovesRemaining]);
+  }, [aiTier, cycleProgress]);
 
 
   // Check milestones
@@ -577,21 +591,14 @@ export default function Game2048Page() {
   const makeMoveRef = useRef(makeMove);
   makeMoveRef.current = makeMove;
 
-  // AI auto-play loop: burns from aiMovesRemaining, stops on 0, and advances
-  // the tier so the next cycle demands another 100 manual moves for +5 AI moves.
+  // AI auto-play move-maker: while a session is active, the AI plays a move
+  // roughly every 700ms until the game is over.
   useEffect(() => {
     autoPlayRef.current = isAutoPlaying;
     if (!isAutoPlaying) return;
     const id = setInterval(async () => {
       if (!autoPlayRef.current) return;
-      if (gameOver) { setIsAutoPlaying(false); return; }
-      if (aiMovesRemaining <= 0) {
-        setIsAutoPlaying(false);
-        // Advance to next tier + reset cycle so the ring greys out again.
-        setAiTier((t) => t + 1);
-        setCycleProgress(0);
-        return;
-      }
+      if (gameOver) { endAutoPlaySession(); return; }
       const grid = tilesToGrid(tiles);
       const dir = bestMove(grid);
       if (dir) {
@@ -599,9 +606,25 @@ export default function Game2048Page() {
         try { await makeMoveRef.current(dir); }
         finally { isAutoMoveRef.current = false; }
       }
-    }, 900);
+    }, 700);
     return () => clearInterval(id);
-  }, [isAutoPlaying, tiles, gameOver, aiMovesRemaining]);
+  }, [isAutoPlaying, tiles, gameOver, endAutoPlaySession]);
+
+  // Countdown that drains the battery one second at a time during a session.
+  useEffect(() => {
+    if (!isAutoPlaying) return;
+    const id = setInterval(() => {
+      setAutoPlaySecondsLeft((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isAutoPlaying]);
+
+  // When the countdown hits zero, end the session (drain + tier up).
+  useEffect(() => {
+    if (isAutoPlaying && autoPlaySecondsLeft === 0) {
+      endAutoPlaySession();
+    }
+  }, [isAutoPlaying, autoPlaySecondsLeft, endAutoPlaySession]);
 
   // Advisor: sends the current board to Venice AI, paid via x402 with USDC
   // from the connected wallet's EIP-1193 provider.
@@ -756,9 +779,9 @@ export default function Game2048Page() {
             isUnlocked={isAIUnlocked}
             isAutoPlaying={isAutoPlaying}
             tier={aiTier}
-            aiMovesAllowed={aiMovesAllowed}
-            aiMovesRemaining={aiMovesRemaining}
-            onToggleAutoPlay={() => setIsAutoPlaying((v) => !v)}
+            autoPlaySeconds={autoPlaySeconds}
+            secondsLeft={autoPlaySecondsLeft}
+            onToggleAutoPlay={toggleAutoPlay}
             onAskAdvisor={askAdvisor}
           />
         </div>
