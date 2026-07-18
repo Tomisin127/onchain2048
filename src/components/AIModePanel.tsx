@@ -169,7 +169,7 @@ export function AIModePanel({
         <DialogContent className="glass-card">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" /> Venice AI Advisor
+              <Sparkles className="h-5 w-5 text-primary" /> AI Advisor
             </DialogTitle>
             <DialogDescription className="font-body text-xs">
               Paid via x402 (USDC on Base) from your connected wallet.

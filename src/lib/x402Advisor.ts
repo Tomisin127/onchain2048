@@ -7,11 +7,9 @@ import { Direction } from '@/types/game';
 
 // tx402.ai is an x402 v2 gateway that gates its OpenAI-compatible
 // /v1/chat/completions endpoint with a *per-request* 402 challenge, settling
-// USDC on Base (eip155:8453). This is different from Venice, which only accepts
-// the payment header on its /x402/top-up route and then wants a SIGN-IN-WITH-X
-// session header for inference — a two-step model that does not fit a simple
-// pay-as-you-go advisor. tx402.ai returns the 402 directly on the inference
-// call, which is exactly what wrapFetchWithPayment expects.
+// USDC on Base (eip155:8453). It returns the 402 directly on the inference call,
+// which is exactly what wrapFetchWithPayment expects — a true pay-as-you-go
+// model that needs no account, API key, or session handshake.
 const X402_URL = 'https://tx402.ai/v1/chat/completions';
 
 // Cheapest model on the gateway with a huge context window — plenty for a tiny
@@ -67,9 +65,28 @@ export async function askX402Advisor(opts: {
   const client = new x402Client();
   registerExactEvmScheme(client, { signer });
 
+  // The @x402/fetch retry logic sets `Access-Control-Expose-Headers` as a
+  // *request* header on the paid retry (it is actually a response-only header).
+  // Because that header name is not in the gateway's `Access-Control-Allow-Headers`
+  // allow-list, the browser's CORS preflight for the retry is rejected and fetch
+  // throws a bare "Failed to fetch". Strip it from any outgoing request so the
+  // preflight only advertises headers the gateway actually allows (Content-Type,
+  // X-Payment, etc.). We also bind to window.fetch to avoid Illegal invocation.
+  const patchedFetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const req = input as { headers?: Headers };
+    if (req && typeof req === 'object' && req.headers && typeof req.headers.delete === 'function') {
+      try {
+        req.headers.delete('Access-Control-Expose-Headers');
+      } catch {
+        /* headers immutable — ignore, request will still be attempted */
+      }
+    }
+    return window.fetch(input, init);
+  }) as typeof fetch;
+
   // Wrapped fetch: on a 402 it parses payment requirements, signs the USDC
-  // authorization, and retries with the PAYMENT-SIGNATURE header.
-  const fetchWithPay = wrapFetchWithPayment(fetch, client);
+  // authorization, and retries with the X-PAYMENT header.
+  const fetchWithPay = wrapFetchWithPayment(patchedFetch, client);
 
   const boardText = grid
     .map((row) => row.map((v) => (v === 0 ? '.' : String(v)).padStart(4, ' ')).join(' '))
