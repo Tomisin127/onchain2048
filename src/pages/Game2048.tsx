@@ -277,8 +277,9 @@ export default function Game2048Page() {
     if (tiles.some((t) => t.isMerged)) playMergeNote();
   }, [tiles, playMergeNote]);
 
-  // Track completed moves: gameMakeMove spawns exactly 1 new tile per valid move,
-  // so a bump in the max tile id maps 1-to-1 with a successful move.
+  // Track completed moves. Auto-moves (AI) burn from aiMovesRemaining; manual
+  // moves fill cycleProgress until it reaches AI_UNLOCK_MOVES, which grants a
+  // batch of aiMovesAllowed AI moves.
   const lastMaxTileIdRef = useRef(0);
   useEffect(() => {
     if (tiles.length === 0) return;
@@ -290,14 +291,28 @@ export default function Game2048Page() {
     if (maxId > lastMaxTileIdRef.current) {
       const delta = maxId - lastMaxTileIdRef.current;
       lastMaxTileIdRef.current = maxId;
-      setMoveCount((c) => c + delta);
+      if (isAutoMoveRef.current) {
+        setAiMovesRemaining((n) => Math.max(0, n - delta));
+      } else {
+        setCycleProgress((c) => {
+          const next = Math.min(AI_UNLOCK_MOVES, c + delta);
+          // Just filled the ring: award AI moves for this tier.
+          if (c < AI_UNLOCK_MOVES && next >= AI_UNLOCK_MOVES) {
+            setAiMovesRemaining(aiMovesAllowed);
+          }
+          return next;
+        });
+      }
     }
-  }, [tiles]);
+  }, [tiles, aiMovesAllowed]);
 
-  // Persist move count for the AI-mode progress bar
+  // Persist tier progress
   useEffect(() => {
-    localStorage.setItem('ai2048_move_count', String(moveCount));
-  }, [moveCount]);
+    localStorage.setItem('ai2048_tier', String(aiTier));
+    localStorage.setItem('ai2048_cycle', String(cycleProgress));
+    localStorage.setItem('ai2048_ai_left', String(aiMovesRemaining));
+  }, [aiTier, cycleProgress, aiMovesRemaining]);
+
 
   // Check milestones
   const checkMilestones = useCallback(() => {
