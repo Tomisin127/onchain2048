@@ -241,11 +241,24 @@ export default function Game2048Page() {
   const BOARD_GAP = 10;
   useLayoutEffect(() => {
     const compute = () => {
+      const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const available = vh - CHROME_HEIGHT;
-      // cellSize*4 + BOARD_GAP*5 = available  →  cellSize = (available - 50) / 4
-      const raw = Math.floor((available - BOARD_GAP * 5) / 4);
-      setCellSize(Math.min(Math.max(raw, 52), 80)); // clamp 52–80 px
+
+      // Height budget: fit the board + all panels within the viewport height.
+      const availableH = vh - CHROME_HEIGHT;
+      const cellFromHeight = Math.floor((availableH - BOARD_GAP * 5) / 4);
+
+      // Width budget: the board lives inside a centered column capped at 512px
+      // (max-w-lg) with horizontal page padding + the game Card's own padding.
+      // Never let the board exceed the usable width on narrow phones.
+      const columnWidth = Math.min(vw, 512);
+      const horizontalChrome = 32 /* page px-4 */ + 20 /* card p-2.5 */;
+      const availableW = columnWidth - horizontalChrome;
+      const cellFromWidth = Math.floor((availableW - BOARD_GAP * 5) / 4);
+
+      // Use the smaller of the two so the board fits both dimensions, then clamp.
+      const raw = Math.min(cellFromHeight, cellFromWidth);
+      setCellSize(Math.min(Math.max(raw, 46), 92)); // clamp 46–92 px
     };
     compute();
     window.addEventListener('resize', compute);
@@ -374,12 +387,22 @@ export default function Game2048Page() {
     });
   }, [tiles, playMilestoneSound]);
 
-  // True when the active wallet has enough ETH or B20 to make at least one move.
-  // ETH path requires > MOVE_COST_ETH; B20 path requires >= B20_MOVE_COST_WEI.
+  // Gas on Base is ALWAYS paid in native ETH — even for B20-funded moves, which
+  // send value=0 but still cost gas to execute the contract call. So the wallet
+  // must ALWAYS hold at least a small ETH gas reserve, or the transaction can't
+  // be completed. If it can't be completed, no move may happen on the board.
+  const GAS_RESERVE_ETH = 0.000003; // ~enough for one Base contract call
   const ethBalanceNum = parseFloat(balance);
-  const hasEnoughEth = ethBalanceNum >= MOVE_COST_ETH;
+  const hasGasForMove = ethBalanceNum >= GAS_RESERVE_ETH;
   const hasEnoughB20 = b20BalanceWei >= B20_MOVE_COST_WEI;
-  const canMove = hasEnoughEth || hasEnoughB20;
+  // Payment token is auto-selected: B20 is used when the wallet holds >= 10 B20.
+  const willUseB20 = hasEnoughB20;
+  // When paying with ETH, the wallet needs the fixed move cost PLUS gas.
+  const canPayWithEth = ethBalanceNum >= MOVE_COST_ETH + GAS_RESERVE_ETH;
+  // A move is allowed only if the resulting transaction can actually settle:
+  //  - B20 move  → needs gas (ETH) only; B20 alone is NOT enough.
+  //  - ETH move  → needs move cost + gas.
+  const canMove = willUseB20 ? hasGasForMove : canPayWithEth;
 
   // Stop auto-play immediately whenever the balance is too low to continue.
   useEffect(() => {
@@ -394,11 +417,20 @@ export default function Game2048Page() {
   const makeMove = async (direction: Direction) => {
     if (gameOver || isProcessing) return;
 
-    // Hard block: wallet has neither enough ETH nor enough B20 for a move.
+    // Hard block: the transaction cannot be settled, so NOTHING moves on the
+    // board (this holds for silent/Privy modes and B20-funded moves too, since
+    // gas is always paid in ETH). This also prevents the AI auto-play progress
+    // from advancing when no real on-chain move can happen.
     if (!canMove) {
-      setLowBalanceError(
-        `Insufficient balance. You need at least ${MOVE_COST_ETH} ETH or 10 B20 on Base to make a move.`
-      );
+      if (willUseB20 && !hasGasForMove) {
+        setLowBalanceError(
+          'Insufficient ETH for gas. B20 covers the move fee, but you still need a small amount of Base ETH to pay gas. No moves can be made until you add ETH.'
+        );
+      } else {
+        setLowBalanceError(
+          `Insufficient balance. You need at least ${MOVE_COST_ETH} ETH (plus gas) or 10 B20 with a little ETH for gas on Base. No moves can be made until you add funds.`
+        );
+      }
       return;
     }
     setLowBalanceError(null);
