@@ -626,7 +626,7 @@ export default function Game2048Page() {
     }
   }, [isAutoPlaying, autoPlaySecondsLeft, endAutoPlaySession]);
 
-  // Advisor: sends the current board to Venice AI, paid via x402 with USDC
+      // Advisor: sends the current board to an x402-gated AI, paid per request with USDC
   // from the connected wallet's EIP-1193 provider.
   const askAdvisor = useCallback(async () => {
     try {
