@@ -577,22 +577,60 @@ export default function Game2048Page() {
   const makeMoveRef = useRef(makeMove);
   makeMoveRef.current = makeMove;
 
-  // AI auto-play loop: every ~900ms, pick the best move for the current board.
+  // AI auto-play loop: burns from aiMovesRemaining, stops on 0, and advances
+  // the tier so the next cycle demands another 100 manual moves for +5 AI moves.
   useEffect(() => {
     autoPlayRef.current = isAutoPlaying;
     if (!isAutoPlaying) return;
-    const id = setInterval(() => {
+    const id = setInterval(async () => {
       if (!autoPlayRef.current) return;
-      if (gameOver) {
+      if (gameOver) { setIsAutoPlaying(false); return; }
+      if (aiMovesRemaining <= 0) {
         setIsAutoPlaying(false);
+        // Advance to next tier + reset cycle so the ring greys out again.
+        setAiTier((t) => t + 1);
+        setCycleProgress(0);
         return;
       }
       const grid = tilesToGrid(tiles);
       const dir = bestMove(grid);
-      if (dir) void makeMoveRef.current(dir);
+      if (dir) {
+        isAutoMoveRef.current = true;
+        try { await makeMoveRef.current(dir); }
+        finally { isAutoMoveRef.current = false; }
+      }
     }, 900);
     return () => clearInterval(id);
-  }, [isAutoPlaying, tiles, gameOver]);
+  }, [isAutoPlaying, tiles, gameOver, aiMovesRemaining]);
+
+  // Advisor: sends the current board to Venice AI, paid via x402 with USDC
+  // from the connected wallet's EIP-1193 provider.
+  const askAdvisor = useCallback(async () => {
+    try {
+      const grid = tilesToGrid(tiles);
+      let provider: any = null;
+      let address: `0x${string}` | null = null;
+      if (authenticated) {
+        const embedded = wallets.find(w => w.walletClientType === 'privy');
+        if (embedded) {
+          provider = await embedded.getEthereumProvider();
+          address = embedded.address as `0x${string}`;
+        }
+      } else if (typeof window !== 'undefined' && (window as any).ethereum) {
+        provider = (window as any).ethereum;
+        address = (baseAddress || selfPayAddress || '') as `0x${string}`;
+      }
+      if (!provider || !address) {
+        throw new Error('Connect a wallet with an EIP-1193 provider to pay via x402.');
+      }
+      const { askVeniceAdvisor } = await import('@/lib/veniceAdvisor');
+      const result = await askVeniceAdvisor({ provider, address, grid, score });
+      return { direction: result.direction, reason: result.reason };
+    } catch (err) {
+      throw err;
+    }
+  }, [tiles, score, authenticated, wallets, baseAddress, selfPayAddress]);
+
 
   const isConnected = authenticated || isBaseConnected || isSelfPayConnected;
 
