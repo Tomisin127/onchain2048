@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import { AIModePanel } from '@/components/AIModePanel';
 import { bestMove, tilesToGrid } from '@/lib/ai2048';
 import { usePrivy, useWallets, useSendTransaction } from '@privy-io/react-auth';
@@ -8,6 +8,7 @@ import { useSelfPayWallet } from '@/hooks/useSelfPayWallet';
 import type { SpendPermissionValues } from '@/components/SpendPermissionConfig';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { AlertCircle } from 'lucide-react';
 import { GameBoard } from '@/components/GameBoard';
 
 import { WalletPanel } from '@/components/WalletPanel';
@@ -89,6 +90,12 @@ export default function Game2048Page() {
   const [optimisticMovesUsed, setOptimisticMovesUsed] = useState(0);
   const [b20Allowance, setB20Allowance] = useState<bigint>(BigInt(0));
   const [onchainScore, setOnchainScore] = useState<number | null>(null);
+  const [lowBalanceError, setLowBalanceError] = useState<string | null>(null);
+
+  // Dynamic cell size — computed from actual available viewport height so the
+  // board + all panels fill the screen without a scroll or empty gap below.
+  const [cellSize, setCellSize] = useState(68);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const { playMoveSound, playMergeNote, playMilestoneSound, resetMelody } = useGameSounds();
   const milestoneTilesRef = useRef<Set<string>>(new Set());
@@ -220,6 +227,31 @@ export default function Game2048Page() {
     setPendingTransactions([]);
   }, [balance]);
 
+  // Compute the largest cell size that lets the 4×4 board + all surrounding
+  // panels fit exactly within the viewport height, with no scroll or gap.
+  // Heights of non-board elements (measured from the rendered layout):
+  //   outer py-3 (top+bottom): 24px
+  //   header row:              ~48px  + gap 8px
+  //   AI panel card:           ~60px  + gap 8px
+  //   wallet panel:            ~44px  + gap 8px
+  //   game Card padding top/bot (p-2.5): 20px  + gap 8px
+  //   footer text inside Card: ~28px
+  // Total non-board height ≈ 256px.  Board = cellSize*4 + GAP*5 (GAP=10).
+  const CHROME_HEIGHT = 256;
+  const BOARD_GAP = 10;
+  useLayoutEffect(() => {
+    const compute = () => {
+      const vh = window.innerHeight;
+      const available = vh - CHROME_HEIGHT;
+      // cellSize*4 + BOARD_GAP*5 = available  →  cellSize = (available - 50) / 4
+      const raw = Math.floor((available - BOARD_GAP * 5) / 4);
+      setCellSize(Math.min(Math.max(raw, 52), 80)); // clamp 52–80 px
+    };
+    compute();
+    window.addEventListener('resize', compute);
+    return () => window.removeEventListener('resize', compute);
+  }, []);
+
   // Subscribe to on-chain MoveMade events for the active wallet address.
   // The contract score is displayed alongside the local score for reconciliation.
   useEffect(() => {
@@ -342,8 +374,34 @@ export default function Game2048Page() {
     });
   }, [tiles, playMilestoneSound]);
 
+  // True when the active wallet has enough ETH or B20 to make at least one move.
+  // ETH path requires > MOVE_COST_ETH; B20 path requires >= B20_MOVE_COST_WEI.
+  const ethBalanceNum = parseFloat(balance);
+  const hasEnoughEth = ethBalanceNum >= MOVE_COST_ETH;
+  const hasEnoughB20 = b20BalanceWei >= B20_MOVE_COST_WEI;
+  const canMove = hasEnoughEth || hasEnoughB20;
+
+  // Stop auto-play immediately whenever the balance is too low to continue.
+  useEffect(() => {
+    if (!canMove && isAutoPlaying) {
+      endAutoPlaySession();
+      setLowBalanceError(
+        'Auto-play stopped: insufficient balance. Add ETH or B20 to continue.'
+      );
+    }
+  }, [canMove, isAutoPlaying, endAutoPlaySession]);
+
   const makeMove = async (direction: Direction) => {
     if (gameOver || isProcessing) return;
+
+    // Hard block: wallet has neither enough ETH nor enough B20 for a move.
+    if (!canMove) {
+      setLowBalanceError(
+        `Insufficient balance. You need at least ${MOVE_COST_ETH} ETH or 10 B20 on Base to make a move.`
+      );
+      return;
+    }
+    setLowBalanceError(null);
 
     const isUsingPrivy = authenticated && wallets.length > 0;
     const isUsingBase = isBaseConnected && baseAddress;
@@ -351,8 +409,9 @@ export default function Game2048Page() {
     const actualMoves = remainingMoves - optimisticMovesUsed;
 
     if (actualMoves <= 3) {
-      alert(`Only ${actualMoves} move${actualMoves === 1 ? '' : 's'} remaining! Please fund your wallet to continue playing.`);
-      return;
+      setLowBalanceError(
+        `Only ${actualMoves} move${actualMoves === 1 ? '' : 's'} remaining. Please fund your wallet to continue.`
+      );
     }
 
     setIsProcessing(true);
@@ -375,7 +434,7 @@ export default function Game2048Page() {
       if (isUsingPrivy) {
         const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
         if (!embeddedWallet) {
-          alert('Embedded wallet not found!');
+          setLowBalanceError('Embedded wallet not found. Please reconnect.');
           setIsProcessing(false);
           return;
         }
@@ -424,7 +483,7 @@ export default function Game2048Page() {
             console.error('❌ Background transaction failed:', msg);
             setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
             if (/insufficient|balance|funds/i.test(msg)) {
-              alert(`Move tx failed: ${msg}. Fund your Privy embedded wallet with a small amount of Base ETH for gas, or top up B20.`);
+              setLowBalanceError('Move failed: insufficient balance. Fund your wallet with Base ETH for gas, or top up B20.');
             }
           }
         })();
@@ -503,7 +562,7 @@ export default function Game2048Page() {
               console.error('Advanced relay transaction failed:', error);
               const errorMsg = error instanceof Error ? error.message : String(error);
               if (errorMsg.includes('Insufficient') || errorMsg.includes('insufficient')) {
-                alert('Relayer wallet has insufficient balance. Please add funds to your relayer wallet.');
+                setLowBalanceError('Relayer wallet has insufficient balance. Please add funds to your relayer wallet.');
               }
               setOptimisticMovesUsed(prev => Math.max(0, prev - 1));
             }
@@ -528,7 +587,7 @@ export default function Game2048Page() {
             console.error('Pay-per-move transaction failed:', error);
             const errorMsg = error instanceof Error ? error.message : String(error);
             if (errorMsg.includes('Insufficient') || errorMsg.includes('insufficient')) {
-              alert('Insufficient balance to make a move. Please add funds to your wallet.');
+              setLowBalanceError('Insufficient balance to make a move. Please add funds to your wallet.');
             }
           }
 
@@ -537,10 +596,10 @@ export default function Game2048Page() {
         }
       }
 
-      alert('Please connect a wallet first!');
+      setLowBalanceError('Please connect a wallet first.');
     } catch (error) {
       console.error('Transaction failed:', error);
-      alert('Transaction failed. Please try again.');
+      setLowBalanceError('Transaction failed. Please try again.');
     } finally {
       setIsProcessing(false);
     }
@@ -771,7 +830,7 @@ export default function Game2048Page() {
         embeddedWalletAddress={isSelfPayConnected ? '' : embeddedWalletAddress}
       />
       
-      <div className="max-w-lg w-full mx-auto flex flex-col justify-center gap-2 animate-fade-in min-h-0 flex-1">
+      <div ref={containerRef} className="max-w-lg w-full mx-auto flex flex-col gap-2 animate-fade-in min-h-0 flex-1">
         {/* Compact header: title + user, inline scores, disconnect */}
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -830,11 +889,20 @@ export default function Game2048Page() {
           onchainScore={onchainScore}
         />
 
+        {/* Low-balance error banner */}
+        {lowBalanceError && (
+          <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>{lowBalanceError}</span>
+          </div>
+        )}
+
         <Card className="p-2.5 glass-card flex flex-col items-center">
           <GameBoard
             tiles={tiles}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
+            cellSize={cellSize}
           />
 
           {gameOver && (
