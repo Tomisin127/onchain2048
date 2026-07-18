@@ -646,6 +646,35 @@ export default function Game2048Page() {
       if (!provider || !address) {
         throw new Error('Connect a wallet with an EIP-1193 provider to pay via x402.');
       }
+
+      // Pre-flight balance check: the advisor is paid in USDC on Base via x402.
+      // If the paying wallet holds less than the minimum, bail out with a clear
+      // error instead of letting the x402 payment fail silently (blank result).
+      const USDC_BASE_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+      const MIN_USDC = 0.003;
+      try {
+        const usdcProvider = new ethers.JsonRpcProvider('https://mainnet.base.org');
+        const usdc = new ethers.Contract(
+          USDC_BASE_ADDRESS,
+          ['function balanceOf(address) view returns (uint256)'],
+          usdcProvider
+        );
+        const usdcRaw = await usdc.balanceOf(address);
+        const usdcBalance = Number(ethers.formatUnits(usdcRaw, 6)); // USDC has 6 decimals
+        if (usdcBalance < MIN_USDC) {
+          throw new Error(
+            `Insufficient USDC balance to run AI inference. You have ${usdcBalance.toFixed(4)} USDC ` +
+            `but need at least ${MIN_USDC} USDC on Base. Please top up USDC in this wallet and try again.`
+          );
+        }
+      } catch (balErr) {
+        // Re-throw our own insufficient-balance error; swallow only RPC read failures.
+        if (balErr instanceof Error && balErr.message.includes('Insufficient USDC')) {
+          throw balErr;
+        }
+        console.warn('[v0] USDC balance pre-check failed (continuing):', balErr);
+      }
+
       const { askX402Advisor } = await import('@/lib/x402Advisor');
       const result = await askX402Advisor({ provider, address, grid, score });
       return { direction: result.direction, reason: result.reason };
@@ -742,7 +771,7 @@ export default function Game2048Page() {
         embeddedWalletAddress={isSelfPayConnected ? '' : embeddedWalletAddress}
       />
       
-      <div className="max-w-lg w-full mx-auto flex flex-col gap-2 animate-fade-in min-h-0 flex-1">
+      <div className="max-w-lg w-full mx-auto flex flex-col justify-center gap-2 animate-fade-in min-h-0 flex-1">
         {/* Compact header: title + user, inline scores, disconnect */}
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
