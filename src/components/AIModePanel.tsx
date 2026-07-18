@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Sparkles, Bot, Loader2, Lock } from 'lucide-react';
+import { Sparkles, Bot, Loader2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -9,47 +8,61 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { supabase } from '@/integrations/supabase/client';
+import { cn } from '@/lib/utils';
+import type { Direction } from '@/types/game';
 
 interface AIModePanelProps {
-  moveCount: number;
+  /** Manual moves completed in the current cycle (0..unlockAt) */
+  cycleProgress: number;
   unlockAt: number;
   isUnlocked: boolean;
   isAutoPlaying: boolean;
+  tier: number;
+  aiMovesAllowed: number;
+  aiMovesRemaining: number;
   onToggleAutoPlay: () => void;
-  boardTiles: { row: number; col: number; value: number }[];
-  score: number;
+  onAskAdvisor: () => Promise<{ direction: Direction | null; reason: string } | null>;
 }
 
 export function AIModePanel({
-  moveCount,
+  cycleProgress,
   unlockAt,
   isUnlocked,
   isAutoPlaying,
+  tier,
+  aiMovesAllowed,
+  aiMovesRemaining,
   onToggleAutoPlay,
-  boardTiles,
-  score,
+  onAskAdvisor,
 }: AIModePanelProps) {
-  const progress = Math.min(100, (moveCount / unlockAt) * 100);
   const [advisorOpen, setAdvisorOpen] = useState(false);
   const [advisorLoading, setAdvisorLoading] = useState(false);
-  const [advice, setAdvice] = useState<string>('');
+  const [advice, setAdvice] = useState<{ direction: Direction | null; reason: string } | null>(null);
   const [advisorError, setAdvisorError] = useState<string>('');
+
+  const pct = Math.min(100, (cycleProgress / unlockAt) * 100);
+
+  // Circular ring math
+  const size = 56;
+  const stroke = 4;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const dash = (pct / 100) * circ;
+
+  const handleClickRing = () => {
+    if (!isUnlocked) return;
+    onToggleAutoPlay();
+  };
 
   const askAdvisor = async () => {
     setAdvisorOpen(true);
-    setAdvice('');
+    setAdvice(null);
     setAdvisorError('');
     setAdvisorLoading(true);
     try {
-      const grid: number[][] = Array.from({ length: 4 }, () => Array(4).fill(0));
-      boardTiles.forEach((t) => (grid[t.row][t.col] = t.value));
-
-      const { data, error } = await supabase.functions.invoke('ai-2048-advisor', {
-        body: { grid, score },
-      });
-      if (error) throw error;
-      setAdvice(data?.advice ?? 'No advice available.');
+      const result = await onAskAdvisor();
+      if (!result) throw new Error('Advisor unavailable for this wallet type.');
+      setAdvice(result);
     } catch (err) {
       setAdvisorError(err instanceof Error ? err.message : 'Failed to reach the AI advisor.');
     } finally {
@@ -57,68 +70,122 @@ export function AIModePanel({
     }
   };
 
+  const ringColor = isUnlocked
+    ? 'url(#aiGradient)'
+    : 'hsl(var(--muted-foreground) / 0.4)';
+  const iconColor = isUnlocked ? 'text-primary' : 'text-muted-foreground/60';
+
   return (
     <>
-      <Card className="p-4 glass-card space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
-            <span className="font-display font-semibold text-sm">AI Mode</span>
+      <div className="flex items-center gap-3">
+        {/* Circular progress + icon (tap to toggle auto-play when unlocked) */}
+        <button
+          onClick={handleClickRing}
+          disabled={!isUnlocked}
+          aria-label={
+            !isUnlocked
+              ? `AI locked — ${unlockAt - cycleProgress} moves to go`
+              : isAutoPlaying
+                ? 'Stop AI auto-play'
+                : 'Start AI auto-play'
+          }
+          className={cn(
+            'relative shrink-0 rounded-full transition-transform',
+            isUnlocked && 'hover:scale-105 active:scale-95 cursor-pointer',
+            !isUnlocked && 'cursor-not-allowed',
+            isAutoPlaying && 'animate-pulse-glow',
+          )}
+          style={{ width: size, height: size }}
+        >
+          <svg width={size} height={size} className="-rotate-90">
+            <defs>
+              <linearGradient id="aiGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="hsl(var(--game-gradient-start))" />
+                <stop offset="100%" stopColor="hsl(var(--game-gradient-end))" />
+              </linearGradient>
+            </defs>
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={r}
+              fill="none"
+              stroke="hsl(var(--secondary))"
+              strokeWidth={stroke}
+            />
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={r}
+              fill="none"
+              stroke={ringColor}
+              strokeWidth={stroke}
+              strokeLinecap="round"
+              strokeDasharray={circ}
+              strokeDashoffset={circ - dash}
+              className="transition-all duration-500"
+            />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            {isAutoPlaying ? (
+              <Zap className={cn('h-5 w-5', iconColor)} />
+            ) : (
+              <Bot className={cn('h-5 w-5', iconColor)} />
+            )}
           </div>
-          <span className="text-xs font-mono text-muted-foreground">
-            {isUnlocked ? 'Unlocked' : `${moveCount}/${unlockAt} moves`}
-          </span>
+        </button>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="h-3 w-3 text-primary" />
+            <span className="text-xs font-display font-semibold">AI Mode · T{tier}</span>
+          </div>
+          <div className="text-[11px] text-muted-foreground font-mono truncate">
+            {isAutoPlaying
+              ? `Playing… ${aiMovesRemaining}/${aiMovesAllowed} left`
+              : isUnlocked
+                ? `Tap to auto-play ${aiMovesAllowed} moves`
+                : `${cycleProgress}/${unlockAt} · unlocks ${aiMovesAllowed} moves`}
+          </div>
         </div>
 
-        <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-500"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-
-        {!isUnlocked ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground font-body">
-            <Lock className="h-3 w-3" />
-            Play {unlockAt - moveCount} more moves to unlock the Claude assistant.
-          </div>
-        ) : (
-          <div className="flex gap-2">
-            <Button
-              onClick={onToggleAutoPlay}
-              size="sm"
-              variant={isAutoPlaying ? 'destructive' : 'default'}
-              className="flex-1 font-body"
-            >
-              <Bot className="h-4 w-4 mr-1" />
-              {isAutoPlaying ? 'Stop Auto-Play' : 'AI Auto-Play'}
-            </Button>
-            <Button onClick={askAdvisor} size="sm" variant="outline" className="flex-1 font-body">
-              <Sparkles className="h-4 w-4 mr-1" />
-              Ask Advisor
-            </Button>
-          </div>
-        )}
-      </Card>
+        <Button
+          onClick={askAdvisor}
+          size="sm"
+          variant="outline"
+          className="font-body h-8 px-2.5 text-xs"
+        >
+          <Sparkles className="h-3.5 w-3.5 mr-1" />
+          Ask
+        </Button>
+      </div>
 
       <Dialog open={advisorOpen} onOpenChange={setAdvisorOpen}>
         <DialogContent className="glass-card">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" /> AI Advisor
+              <Sparkles className="h-5 w-5 text-primary" /> Venice AI Advisor
             </DialogTitle>
-            <DialogDescription className="font-body">
-              A Claude-style AI reviews your current board and suggests your next best move.
+            <DialogDescription className="font-body text-xs">
+              Paid via x402 (USDC on Base) from your connected wallet.
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-[100px] text-sm font-body whitespace-pre-wrap">
+          <div className="min-h-[100px] text-sm font-body">
             {advisorLoading && (
               <div className="flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Thinking...
+                <Loader2 className="h-4 w-4 animate-spin" /> Signing x402 payment & thinking…
               </div>
             )}
-            {advisorError && <div className="text-destructive">{advisorError}</div>}
-            {!advisorLoading && !advisorError && advice}
+            {advisorError && <div className="text-destructive whitespace-pre-wrap">{advisorError}</div>}
+            {!advisorLoading && !advisorError && advice && (
+              <div className="space-y-3">
+                {advice.direction && (
+                  <div className="text-2xl font-display font-bold gradient-text uppercase">
+                    → {advice.direction}
+                  </div>
+                )}
+                <div className="text-muted-foreground whitespace-pre-wrap">{advice.reason}</div>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
