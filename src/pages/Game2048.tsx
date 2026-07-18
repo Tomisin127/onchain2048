@@ -719,34 +719,49 @@ export default function Game2048Page() {
         embeddedWalletAddress={isSelfPayConnected ? '' : embeddedWalletAddress}
       />
       
-      <div className="max-w-lg mx-auto space-y-4 animate-fade-in">
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-4xl font-display font-bold gradient-text">2048</h1>
-            <p className="text-sm text-muted-foreground mt-1 font-body">{userDisplay}</p>
-            <p className="text-xs text-muted-foreground font-mono">{connectionType}</p>
+      <div className="max-w-lg mx-auto space-y-3 animate-fade-in">
+        {/* Compact header: title + user, inline scores, disconnect */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-display font-bold gradient-text leading-none">2048</h1>
+            <p className="text-[11px] text-muted-foreground font-mono truncate">
+              {userDisplay} · {connectionType}
+            </p>
           </div>
-          <Button
-            onClick={handleDisconnect}
-            variant="outline"
-            className="border-border bg-secondary text-secondary-foreground hover:bg-muted font-body"
-          >
-            Disconnect
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="glass-card rounded-lg px-2.5 py-1 text-center">
+              <div className="text-[9px] uppercase tracking-wider text-muted-foreground leading-none">Score</div>
+              <div className="text-sm font-display font-bold text-foreground leading-tight">{score}</div>
+            </div>
+            <div className="glass-card rounded-lg px-2.5 py-1 text-center">
+              <div className="text-[9px] uppercase tracking-wider text-muted-foreground leading-none">Best</div>
+              <div className="text-sm font-display font-bold text-foreground leading-tight">{highScore}</div>
+            </div>
+            <Button
+              onClick={handleDisconnect}
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              Exit
+            </Button>
+          </div>
         </div>
 
-        <ScorePanel score={score} highScore={highScore} />
-
-        <AIModePanel
-          moveCount={moveCount}
-          unlockAt={AI_UNLOCK_MOVES}
-          isUnlocked={isAIUnlocked}
-          isAutoPlaying={isAutoPlaying}
-          onToggleAutoPlay={() => setIsAutoPlaying((v) => !v)}
-          boardTiles={tiles}
-          score={score}
-        />
-
+        {/* AI ring + advisor */}
+        <div className="glass-card rounded-xl px-3 py-2.5">
+          <AIModePanel
+            cycleProgress={cycleProgress}
+            unlockAt={AI_UNLOCK_MOVES}
+            isUnlocked={isAIUnlocked}
+            isAutoPlaying={isAutoPlaying}
+            tier={aiTier}
+            aiMovesAllowed={aiMovesAllowed}
+            aiMovesRemaining={aiMovesRemaining}
+            onToggleAutoPlay={() => setIsAutoPlaying((v) => !v)}
+            onAskAdvisor={askAdvisor}
+          />
+        </div>
 
         <WalletPanel
           walletAddress={walletAddr}
@@ -763,11 +778,7 @@ export default function Game2048Page() {
           onchainScore={onchainScore}
         />
 
-        <p className="text-xs text-center text-muted-foreground -mt-2 font-body">
-          Move cost: 10 $B20 (when available) or {MOVE_COST_ETH} ETH (~${(MOVE_COST_ETH * ethPrice).toFixed(2)})
-        </p>
-
-        <Card className="p-4 glass-card flex flex-col items-center">
+        <Card className="p-3 glass-card flex flex-col items-center">
           <GameBoard
             tiles={tiles}
             onTouchStart={handleTouchStart}
@@ -775,24 +786,25 @@ export default function Game2048Page() {
           />
 
           {gameOver && (
-            <div className="text-center mt-4">
-              <div className="text-xl font-display font-bold text-destructive">Game Over</div>
+            <div className="text-center mt-3">
+              <div className="text-lg font-display font-bold text-destructive">Game Over</div>
             </div>
           )}
 
           <Button
             onClick={handleNewGame}
-            className="w-full mt-4 gradient-btn text-foreground font-display font-semibold"
+            className="w-full mt-3 gradient-btn text-foreground font-display font-semibold h-9"
             disabled={isProcessing}
           >
             New Game
           </Button>
 
-          <p className="text-xs text-center text-muted-foreground mt-3 font-body">
-            Swipe or use arrow keys • On-chain via 2048 contract
+          <p className="text-[10px] text-center text-muted-foreground mt-2 font-body">
+            Swipe or arrows · 10 $B20 or {MOVE_COST_ETH} ETH per move
           </p>
         </Card>
       </div>
     </div>
   );
 }
+
