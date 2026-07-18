@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Sparkles, Bot, Loader2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,14 +12,16 @@ import { cn } from '@/lib/utils';
 import type { Direction } from '@/types/game';
 
 interface AIModePanelProps {
-  /** Manual moves completed in the current cycle (0..unlockAt) */
+  /** Manual moves completed in the current recharge cycle (0..unlockAt) */
   cycleProgress: number;
   unlockAt: number;
   isUnlocked: boolean;
   isAutoPlaying: boolean;
   tier: number;
-  aiMovesAllowed: number;
-  aiMovesRemaining: number;
+  /** Total seconds granted per auto-play session at the current tier */
+  autoPlaySeconds: number;
+  /** Seconds remaining in the active auto-play session */
+  secondsLeft: number;
   onToggleAutoPlay: () => void;
   onAskAdvisor: () => Promise<{ direction: Direction | null; reason: string } | null>;
 }
@@ -30,8 +32,8 @@ export function AIModePanel({
   isUnlocked,
   isAutoPlaying,
   tier,
-  aiMovesAllowed,
-  aiMovesRemaining,
+  autoPlaySeconds,
+  secondsLeft,
   onToggleAutoPlay,
   onAskAdvisor,
 }: AIModePanelProps) {
@@ -39,22 +41,12 @@ export function AIModePanel({
   const [advisorLoading, setAdvisorLoading] = useState(false);
   const [advice, setAdvice] = useState<{ direction: Direction | null; reason: string } | null>(null);
   const [advisorError, setAdvisorError] = useState<string>('');
-  const [countdown, setCountdown] = useState(0);
 
-  // Auto-play countdown timer
-  useEffect(() => {
-    if (!isAutoPlaying) {
-      setCountdown(0);
-      return;
-    }
-    setCountdown(9);
-    const timer = setInterval(() => {
-      setCountdown(prev => (prev <= 1 ? 9 : prev - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [isAutoPlaying]);
-
-  const pct = Math.min(100, (cycleProgress / unlockAt) * 100);
+  // The ring shows the session timer while auto-playing, otherwise the
+  // recharge progress toward the next unlock.
+  const pct = isAutoPlaying
+    ? (autoPlaySeconds > 0 ? Math.min(100, (secondsLeft / autoPlaySeconds) * 100) : 0)
+    : Math.min(100, (cycleProgress / unlockAt) * 100);
 
   // Circular ring math
   const size = 56;

@@ -45,6 +45,9 @@
     "@radix-ui/react-tooltip": "^1.2.7",
     "@supabase/supabase-js": "^2.98.0",
     "@tanstack/react-query": "^5.83.0",
+    "@x402/core": "^2.19.0",
+    "@x402/evm": "^2.19.0",
+    "@x402/fetch": "^2.19.0",
     "buffer": "^6.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -71,7 +74,6 @@
     "vaul": "^0.9.9",
     "viem": "^2.38.6",
     "wagmi": "^2.19.5",
-    "x402-fetch": "^1.2.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
