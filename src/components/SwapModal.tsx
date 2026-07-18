@@ -521,10 +521,10 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
         <Button
           variant="outline"
           size="icon"
-          className="fixed right-4 top-1/2 -translate-y-1/2 z-50 h-14 w-14 rounded-full border-2 border-primary/50 bg-background/95 backdrop-blur-sm shadow-lg hover:bg-primary/10 hover:border-primary transition-all duration-300 hover:scale-110"
+          className="fixed right-4 bottom-4 z-50 h-12 w-12 rounded-full border-2 border-primary/50 bg-background/95 backdrop-blur-sm shadow-lg hover:bg-primary/10 hover:border-primary transition-all duration-300 hover:scale-110"
           title="Trade 2048 Token"
         >
-          <ArrowLeftRight className="h-6 w-6 text-primary" />
+          <ArrowLeftRight className="h-5 w-5 text-primary" />
           <span className="sr-only">Trade Token</span>
         </Button>
       </SheetTrigger>
