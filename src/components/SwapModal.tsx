@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeftRight, ArrowDownUp, Loader2, ExternalLink } from 'lucide-react';
+import { ArrowLeftRight, ArrowDownUp, Loader2, ExternalLink, ChevronDown } from 'lucide-react';
 import { parseEther, formatEther, parseUnits, formatUnits, encodeFunctionData } from 'viem';
 import { base } from 'wagmi/chains';
 import { Button } from '@/components/ui/button';
@@ -11,16 +11,42 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 
-// Contract addresses on Base Mainnet
-const TOKEN_ADDRESS = '0xa27567af20caff5747869a493c8a6a7444b20f9c' as const;
-const WETH_ADDRESS = '0x4200000000000000000000000000000000000006' as const;
-// Base Mainnet Uniswap V3 Quoter V2 (correct address)
+// ─── Token registry ───────────────────────────────────────────────────────────
+const WETH_ADDRESS  = '0x4200000000000000000000000000000000000006' as const;
+
+const TOKENS = {
+  '2048': {
+    symbol: '2048',
+    address: '0xa27567af20caff5747869a493c8a6a7444b20f9c' as `0x${string}`,
+    decimals: 18,
+  },
+  B20: {
+    symbol: 'B20',
+    address: '0xb200000000000000000000ae0575aaf8de90b28d' as `0x${string}`,
+    decimals: 18,
+  },
+  USDC: {
+    symbol: 'USDC',
+    address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`,
+    decimals: 6,
+  },
+} as const;
+
+type TokenKey = keyof typeof TOKENS;
+const TOKEN_KEYS = Object.keys(TOKENS) as TokenKey[];
+
+// ─── Infrastructure ───────────────────────────────────────────────────────────
 const UNISWAP_V3_QUOTER = '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a' as const;
 const UNISWAP_V3_ROUTER = '0x2626664c2603336E57B271c5C0b26F421741e481' as const;
 
-// Multiple RPC endpoints for reliability
 const BASE_RPC_URLS = [
   'https://mainnet.base.org',
   'https://base.llamarpc.com',
@@ -30,7 +56,7 @@ const BASE_RPC_URLS = [
 
 const POOL_FEES = [10000, 3000, 500, 100] as const;
 
-// ABIs
+// ─── ABIs ─────────────────────────────────────────────────────────────────────
 const ERC20_ABI = [
   {
     name: 'balanceOf',
@@ -88,8 +114,6 @@ const QUOTER_ABI = [
   },
 ] as const;
 
-
-
 const SWAP_ROUTER_ABI = [
   {
     name: 'exactInputSingle',
@@ -134,6 +158,7 @@ const SWAP_ROUTER_ABI = [
   },
 ] as const;
 
+// ─── Props ────────────────────────────────────────────────────────────────────
 interface SwapModalProps {
   walletAddress?: string;
   onSwapSuccess?: () => void;
@@ -141,9 +166,58 @@ interface SwapModalProps {
   embeddedWalletAddress?: string;
 }
 
+// ─── Token picker component ───────────────────────────────────────────────────
+function TokenPicker({
+  value,
+  onChange,
+  disabled,
+  exclude,
+}: {
+  value: TokenKey;
+  onChange: (t: TokenKey) => void;
+  disabled?: boolean;
+  exclude?: TokenKey;
+}) {
+  const options = TOKEN_KEYS.filter((k) => k !== exclude);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          className="flex items-center gap-1 h-8 px-3 font-semibold text-foreground border-border/60 hover:border-primary/60 min-w-[72px]"
+        >
+          {value}
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-[120px]">
+        {options.map((key) => (
+          <DropdownMenuItem
+            key={key}
+            onSelect={() => onChange(key)}
+            className="flex items-center justify-between gap-4 cursor-pointer"
+          >
+            <span className="font-semibold">{TOKENS[key].symbol}</span>
+            <span className="text-xs text-muted-foreground truncate max-w-[80px]">
+              {TOKENS[key].address.slice(0, 6)}…
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embeddedWalletAddress }: SwapModalProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [isBuyMode, setIsBuyMode] = useState(true);
+
+  // "from" is always ETH; "to" is the selected token (or vice-versa when flipped)
+  const [selectedToken, setSelectedToken] = useState<TokenKey>('2048');
+  const [isBuyMode, setIsBuyMode] = useState(true); // true = ETH -> token, false = token -> ETH
+
   const [inputAmount, setInputAmount] = useState('');
   const [outputAmount, setOutputAmount] = useState('');
   const [isQuoting, setIsQuoting] = useState(false);
@@ -156,18 +230,15 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
   const [tokenBalance, setTokenBalance] = useState(BigInt(0));
 
   const activeAddress = walletAddress as `0x${string}` | undefined;
+  const token = TOKENS[selectedToken];
 
-  // Helper to create a client with fallback RPCs
   const createClientWithFallback = useCallback(async (): Promise<any> => {
     const { createPublicClient, http, fallback } = await import('viem');
     const transports = BASE_RPC_URLS.map(url => http(url, { timeout: 10000, retryCount: 1 }));
-    return createPublicClient({ 
-      chain: base, 
-      transport: fallback(transports),
-    });
+    return createPublicClient({ chain: base, transport: fallback(transports) });
   }, []);
 
-  // Fetch balances
+  // ── Balances ────────────────────────────────────────────────────────────────
   const fetchBalances = useCallback(async () => {
     if (!activeAddress) return;
     try {
@@ -176,13 +247,13 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
       const [ethBal, tokenBal, allowance] = await Promise.all([
         client.getBalance({ address: activeAddress }),
         client.readContract({
-          address: TOKEN_ADDRESS,
+          address: token.address,
           abi: ERC20_ABI,
           functionName: 'balanceOf',
           args: [activeAddress],
         } as any),
         client.readContract({
-          address: TOKEN_ADDRESS,
+          address: token.address,
           abi: ERC20_ABI,
           functionName: 'allowance',
           args: [activeAddress, UNISWAP_V3_ROUTER],
@@ -192,10 +263,9 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
       setEthBalance(formatEther(ethBal));
       setTokenBalance(tokenBal as bigint);
 
-      // Check approval need
       if (!isBuyMode && inputAmount) {
         try {
-          const amountIn = parseUnits(inputAmount, 18);
+          const amountIn = parseUnits(inputAmount, token.decimals);
           setNeedsApproval((allowance as bigint) < amountIn);
         } catch {
           setNeedsApproval(false);
@@ -204,9 +274,9 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
         setNeedsApproval(false);
       }
     } catch (error) {
-      console.error('[v0] Balance fetch error:', error);
+      console.error('[SwapModal] Balance fetch error:', error);
     }
-  }, [activeAddress, isBuyMode, inputAmount, createClientWithFallback]);
+  }, [activeAddress, isBuyMode, inputAmount, token, createClientWithFallback]);
 
   useEffect(() => {
     if (isOpen) {
@@ -216,14 +286,19 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
     }
   }, [isOpen, fetchBalances]);
 
-  // Re-check approval when input changes
   useEffect(() => {
     if (!isBuyMode && inputAmount && isOpen) {
       fetchBalances();
     }
   }, [inputAmount, isBuyMode, isOpen]);
 
-  // Get quote using eth_call with multiple RPC fallbacks for reliability
+  // Reset amounts when token or direction changes
+  useEffect(() => {
+    setInputAmount('');
+    setOutputAmount('');
+  }, [selectedToken, isBuyMode]);
+
+  // ── Quoting ─────────────────────────────────────────────────────────────────
   const getQuote = useCallback(async (amount: string) => {
     if (!amount || parseFloat(amount) === 0) {
       setOutputAmount('');
@@ -231,119 +306,77 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
     }
     setIsQuoting(true);
     try {
-      const amountIn = isBuyMode ? parseEther(amount) : parseUnits(amount, 18);
-      const tokenIn = isBuyMode ? WETH_ADDRESS : TOKEN_ADDRESS;
-      const tokenOut = isBuyMode ? TOKEN_ADDRESS : WETH_ADDRESS;
+      const tokenIn  = isBuyMode ? WETH_ADDRESS : token.address;
+      const tokenOut = isBuyMode ? token.address : WETH_ADDRESS;
+      const decimalsIn  = isBuyMode ? 18 : token.decimals;
+      const decimalsOut = isBuyMode ? token.decimals : 18;
+      const amountIn = parseUnits(amount, decimalsIn);
 
       const { createPublicClient, http, encodeFunctionData: encodeData, decodeFunctionResult } = await import('viem');
-      
-      // Helper to try quote with a specific RPC
+
       const tryQuoteWithRpc = async (rpcUrl: string): Promise<{ output: bigint; fee: number } | null> => {
-        const client = createPublicClient({ 
-          chain: base, 
-          transport: http(rpcUrl, { 
-            timeout: 10000,
-            retryCount: 1,
-          }) 
-        });
+        const client = createPublicClient({ chain: base, transport: http(rpcUrl, { timeout: 10000, retryCount: 1 }) });
 
         let bestOutput = BigInt(0);
         let foundFee: number = POOL_FEES[0];
 
-        // Try all fee tiers in parallel
         const quotePromises = POOL_FEES.map(async (fee) => {
           try {
             const callData = encodeData({
               abi: QUOTER_ABI,
               functionName: 'quoteExactInputSingle',
-              args: [{
-                tokenIn,
-                tokenOut,
-                amountIn,
-                fee,
-                sqrtPriceLimitX96: BigInt(0),
-              }],
+              args: [{ tokenIn, tokenOut, amountIn, fee, sqrtPriceLimitX96: BigInt(0) }],
             });
-
-            const result = await client.call({
-              to: UNISWAP_V3_QUOTER,
-              data: callData,
-            });
-
+            const result = await client.call({ to: UNISWAP_V3_QUOTER, data: callData });
             if (result.data && result.data !== '0x') {
-              const decoded = decodeFunctionResult({
-                abi: QUOTER_ABI,
-                functionName: 'quoteExactInputSingle',
-                data: result.data,
-              });
+              const decoded = decodeFunctionResult({ abi: QUOTER_ABI, functionName: 'quoteExactInputSingle', data: result.data });
               return { fee, output: decoded[0] as bigint };
             }
             return null;
-          } catch {
-            // This fee tier has no pool or no liquidity - this is expected
-            return null;
-          }
+          } catch { return null; }
         });
 
         const results = await Promise.all(quotePromises);
-        
-        for (const result of results) {
-          if (result && result.output > bestOutput) {
-            bestOutput = result.output;
-            foundFee = result.fee;
-          }
+        for (const r of results) {
+          if (r && r.output > bestOutput) { bestOutput = r.output; foundFee = r.fee; }
         }
-
-        if (bestOutput > BigInt(0)) {
-          return { output: bestOutput, fee: foundFee };
-        }
-        return null;
+        return bestOutput > BigInt(0) ? { output: bestOutput, fee: foundFee } : null;
       };
 
-      // Try each RPC endpoint until we get a valid quote
       let quoteResult: { output: bigint; fee: number } | null = null;
-      
       for (const rpcUrl of BASE_RPC_URLS) {
         try {
           quoteResult = await tryQuoteWithRpc(rpcUrl);
-          if (quoteResult) {
-            break; // Successfully got a quote
-          }
-        } catch (err) {
-          console.log(`[v0] RPC ${rpcUrl} failed, trying next...`, err);
-          continue; // Try next RPC
-        }
+          if (quoteResult) break;
+        } catch { continue; }
       }
 
       if (quoteResult && quoteResult.output > BigInt(0)) {
-        setOutputAmount(formatUnits(quoteResult.output, 18));
+        setOutputAmount(formatUnits(quoteResult.output, decimalsOut));
         setBestFee(quoteResult.fee);
       } else {
-        // Don't show error toast for every failed quote - only set empty output
         setOutputAmount('');
-        // Only show error if user has entered a reasonable amount
-        if (parseFloat(amount) > 0.0001) {
-          console.log('[v0] No liquidity found for quote amount:', amount);
-        }
       }
     } catch (error) {
-      console.error('[v0] Quote error:', error);
+      console.error('[SwapModal] Quote error:', error);
       setOutputAmount('');
     } finally {
       setIsQuoting(false);
     }
-  }, [isBuyMode]);
+  }, [isBuyMode, token]);
 
   useEffect(() => {
     const timer = setTimeout(() => { getQuote(inputAmount); }, 500);
     return () => clearTimeout(timer);
   }, [inputAmount, getQuote]);
 
+  // ── Helpers ─────────────────────────────────────────────────────────────────
   const extractTxHash = (result: any): string => {
     if (typeof result === 'string') return result;
     return result?.hash || result?.transactionHash || '';
   };
 
+  // ── Approve ─────────────────────────────────────────────────────────────────
   const handleApprove = async () => {
     if (!activeAddress) return;
     setIsLoading(true);
@@ -351,51 +384,47 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
       const data = encodeFunctionData({
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [UNISWAP_V3_ROUTER, parseUnits('1000000000', 18)],
+        args: [UNISWAP_V3_ROUTER, parseUnits('1000000000', token.decimals)],
       });
 
       const result = await sendTransaction(
-        { to: TOKEN_ADDRESS, data, chainId: 8453 },
+        { to: token.address, data, chainId: 8453 },
         { address: embeddedWalletAddress || activeAddress, sponsor: false, uiOptions: { showWalletUIs: false } }
       );
 
       const hash = extractTxHash(result);
       if (hash) {
         toast.success('Approval sent! Waiting for confirmation...');
-        // Wait for confirmation using fallback client
         const client = await createClientWithFallback();
         await client.waitForTransactionReceipt({ hash: hash as `0x${string}` });
         toast.success('Approval confirmed!');
         await fetchBalances();
       }
     } catch (error: any) {
-      console.error('[v0] Approve error:', error);
-      const reason =
-        error?.shortMessage ||
-        error?.details ||
-        error?.message ||
-        'Unknown error';
+      const reason = error?.shortMessage || error?.details || error?.message || 'Unknown error';
       toast.error(`Approval failed: ${reason}`);
     } finally {
       setIsLoading(false);
     }
   };
 
+  // ── Swap ────────────────────────────────────────────────────────────────────
   const handleSwap = async () => {
     if (!activeAddress || !inputAmount) return;
     setIsLoading(true);
 
     try {
-      const amountIn = isBuyMode ? parseEther(inputAmount) : parseUnits(inputAmount, 18);
+      const decimalsIn  = isBuyMode ? 18 : token.decimals;
+      const decimalsOut = isBuyMode ? token.decimals : 18;
+      const amountIn = parseUnits(inputAmount, decimalsIn);
 
       let minOut = BigInt(0);
       if (outputAmount) {
-        const quotedOut = parseUnits(outputAmount, 18);
+        const quotedOut = parseUnits(outputAmount, decimalsOut);
         minOut = quotedOut * BigInt(100 - slippage) / BigInt(100);
       }
 
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 1800);
-
       let calldata: `0x${string}`;
       let value: bigint = BigInt(0);
 
@@ -406,7 +435,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
           functionName: 'exactInputSingle',
           args: [{
             tokenIn: WETH_ADDRESS,
-            tokenOut: TOKEN_ADDRESS,
+            tokenOut: token.address,
             fee: bestFee,
             recipient: activeAddress,
             amountIn,
@@ -414,12 +443,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
             sqrtPriceLimitX96: BigInt(0),
           }],
         });
-
-        calldata = encodeFunctionData({
-          abi: SWAP_ROUTER_ABI,
-          functionName: 'multicall',
-          args: [deadline, [swapData]],
-        });
+        calldata = encodeFunctionData({ abi: SWAP_ROUTER_ABI, functionName: 'multicall', args: [deadline, [swapData]] });
         value = amountIn;
       } else {
         // Token -> ETH
@@ -427,7 +451,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
           abi: SWAP_ROUTER_ABI,
           functionName: 'exactInputSingle',
           args: [{
-            tokenIn: TOKEN_ADDRESS,
+            tokenIn: token.address,
             tokenOut: WETH_ADDRESS,
             fee: bestFee,
             recipient: UNISWAP_V3_ROUTER,
@@ -436,18 +460,8 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
             sqrtPriceLimitX96: BigInt(0),
           }],
         });
-
-        const unwrapData = encodeFunctionData({
-          abi: SWAP_ROUTER_ABI,
-          functionName: 'unwrapWETH9',
-          args: [minOut, activeAddress],
-        });
-
-        calldata = encodeFunctionData({
-          abi: SWAP_ROUTER_ABI,
-          functionName: 'multicall',
-          args: [deadline, [swapData, unwrapData]],
-        });
+        const unwrapData = encodeFunctionData({ abi: SWAP_ROUTER_ABI, functionName: 'unwrapWETH9', args: [minOut, activeAddress] });
+        calldata = encodeFunctionData({ abi: SWAP_ROUTER_ABI, functionName: 'multicall', args: [deadline, [swapData, unwrapData]] });
       }
 
       const result = await sendTransaction(
@@ -459,11 +473,8 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
       if (hash) {
         setLastTxHash(hash);
         toast.success('Swap sent! Waiting for confirmation...');
-
-        // Wait for confirmation using fallback client
         const client = await createClientWithFallback();
         await client.waitForTransactionReceipt({ hash: hash as `0x${string}` });
-
         toast.success('Swap completed!');
         setInputAmount('');
         setOutputAmount('');
@@ -471,12 +482,7 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
         onSwapSuccess?.();
       }
     } catch (error: any) {
-      console.error('[v0] Swap error:', error);
-      const reason =
-        error?.shortMessage ||
-        error?.details ||
-        error?.message ||
-        'Unknown error';
+      const reason = error?.shortMessage || error?.details || error?.message || 'Unknown error';
       toast.error(`Swap failed: ${reason}`);
     } finally {
       setIsLoading(false);
@@ -485,8 +491,6 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
 
   const toggleDirection = () => {
     setIsBuyMode(!isBuyMode);
-    setInputAmount('');
-    setOutputAmount('');
   };
 
   const setMaxAmount = () => {
@@ -495,26 +499,22 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
       setInputAmount(maxEth > 0 ? maxEth.toFixed(6) : '0');
     } else {
       const maxTokens = (tokenBalance * BigInt(90)) / BigInt(100);
-      setInputAmount(formatUnits(maxTokens, 18));
+      setInputAmount(formatUnits(maxTokens, token.decimals));
     }
   };
 
-  const inputToken = isBuyMode ? 'ETH' : '2048';
-  const outputToken = isBuyMode ? '2048' : 'ETH';
-  const inputBalanceDisplay = isBuyMode ? ethBalance : formatUnits(tokenBalance, 18);
+  const inputTokenLabel  = isBuyMode ? 'ETH' : token.symbol;
+  const outputTokenLabel = isBuyMode ? token.symbol : 'ETH';
+  const inputBalanceDisplay = isBuyMode ? ethBalance : formatUnits(tokenBalance, token.decimals);
 
-  // Check if input amount exceeds balance
   const hasInsufficientBalance = (() => {
     if (!inputAmount || parseFloat(inputAmount) === 0) return false;
     try {
-      const inputValue = parseFloat(inputAmount);
-      const balanceValue = parseFloat(inputBalanceDisplay);
-      return inputValue > balanceValue;
-    } catch {
-      return false;
-    }
+      return parseFloat(inputAmount) > parseFloat(inputBalanceDisplay);
+    } catch { return false; }
   })();
 
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetTrigger asChild>
@@ -522,36 +522,56 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
           variant="outline"
           size="icon"
           className="fixed right-2 top-1/2 -translate-y-1/2 z-50 h-10 w-10 rounded-full border-2 border-primary/50 bg-background/95 backdrop-blur-sm shadow-lg hover:bg-primary/10 hover:border-primary transition-all duration-300 hover:scale-110"
-          title="Trade 2048 Token"
+          title="Trade Tokens"
         >
           <ArrowLeftRight className="h-4 w-4 text-primary" />
           <span className="sr-only">Trade Token</span>
         </Button>
       </SheetTrigger>
+
       <SheetContent side="right" className="w-full sm:max-w-md bg-background/95 backdrop-blur-md border-l border-border/50 overflow-y-auto">
         <SheetHeader className="pb-4 border-b border-border/50">
           <SheetTitle className="flex items-center gap-2 text-xl font-display gradient-text">
             <ArrowLeftRight className="h-5 w-5" />
-            Trade 2048 Coin
+            Swap Tokens
           </SheetTitle>
         </SheetHeader>
 
         <div className="mt-6">
           {!activeAddress ? (
             <div className="text-center py-8">
-              <p className="text-muted-foreground font-body">
-                Please connect your wallet to trade
-              </p>
+              <p className="text-muted-foreground font-body">Please connect your wallet to trade</p>
             </div>
           ) : (
             <div className="space-y-4">
+
+              {/* Token selector */}
+              <div className="flex items-center justify-between bg-card/40 rounded-xl px-4 py-3 border border-border/50">
+                <span className="text-sm text-muted-foreground">Select token</span>
+                <div className="flex gap-2">
+                  {TOKEN_KEYS.map((key) => (
+                    <button
+                      key={key}
+                      onClick={() => setSelectedToken(key)}
+                      disabled={isLoading}
+                      className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all border ${
+                        selectedToken === key
+                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                          : 'bg-transparent text-muted-foreground border-border/50 hover:border-primary/50 hover:text-foreground'
+                      }`}
+                    >
+                      {TOKENS[key].symbol}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               {/* Input Section */}
               <div className="bg-card/50 rounded-xl p-4 border border-border/50 space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">You pay</span>
                   <span className="text-xs text-muted-foreground">
-                    Balance: {parseFloat(inputBalanceDisplay).toFixed(4)} {inputToken}
+                    Balance: {parseFloat(inputBalanceDisplay).toFixed(4)} {inputTokenLabel}
                   </span>
                 </div>
                 <div className="flex gap-2">
@@ -573,12 +593,12 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
                     >
                       MAX
                     </Button>
-                    <span className="font-semibold text-foreground">{inputToken}</span>
+                    <span className="font-semibold text-foreground">{inputTokenLabel}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Toggle Button */}
+              {/* Toggle Direction */}
               <div className="flex justify-center -my-1">
                 <Button
                   variant="outline"
@@ -601,14 +621,16 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
                     {isQuoting ? (
                       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                     ) : (
-                      outputAmount || '0.0'
+                      <span className={outputAmount ? 'text-foreground' : 'text-muted-foreground'}>
+                        {outputAmount || '0.0'}
+                      </span>
                     )}
                   </div>
-                  <span className="font-semibold text-foreground">{outputToken}</span>
+                  <span className="font-semibold text-foreground">{outputTokenLabel}</span>
                 </div>
               </div>
 
-              {/* Slippage Setting */}
+              {/* Slippage */}
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Max slippage</span>
                 <div className="flex gap-1">
@@ -627,15 +649,14 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
                 </div>
               </div>
 
-
               {/* Insufficient Balance Warning */}
               {hasInsufficientBalance && (
                 <div className="text-sm text-destructive text-center font-medium">
-                  Insufficient {inputToken} balance
+                  Insufficient {inputTokenLabel} balance
                 </div>
               )}
 
-              {/* Action Buttons */}
+              {/* Action Button */}
               {needsApproval ? (
                 <Button
                   onClick={handleApprove}
@@ -643,12 +664,9 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
                   className="w-full h-12 text-base font-semibold"
                 >
                   {isLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Approving...
-                    </>
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Approving...</>
                   ) : (
-                    'Approve 2048 Token'
+                    `Approve ${token.symbol}`
                   )}
                 </Button>
               ) : (
@@ -658,14 +676,11 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
                   className="w-full h-12 text-base font-semibold"
                 >
                   {isLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Swapping...
-                    </>
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Swapping...</>
                   ) : hasInsufficientBalance ? (
-                    `Insufficient ${inputToken} balance`
+                    `Insufficient ${inputTokenLabel} balance`
                   ) : (
-                    `Swap ${inputToken} for ${outputToken}`
+                    `Swap ${inputTokenLabel} → ${outputTokenLabel}`
                   )}
                 </Button>
               )}
