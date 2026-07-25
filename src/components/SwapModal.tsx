@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeftRight, ArrowDownUp, Loader2, ExternalLink, ChevronDown } from 'lucide-react';
+import { ArrowLeftRight, ArrowDownUp, Loader2, ExternalLink, ChevronDown, X, Search } from 'lucide-react';
 import { parseEther, formatEther, parseUnits, formatUnits, encodeFunctionData } from 'viem';
 import { base } from 'wagmi/chains';
 import { Button } from '@/components/ui/button';
@@ -11,12 +11,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 
 // ─── Token registry ───────────────────────────────────────────────────────────
@@ -166,47 +160,91 @@ interface SwapModalProps {
   embeddedWalletAddress?: string;
 }
 
-// ─── Token picker component ───────────────────────────────────────────────────
-function TokenPicker({
-  value,
-  onChange,
-  disabled,
-  exclude,
-}: {
-  value: TokenKey;
-  onChange: (t: TokenKey) => void;
-  disabled?: boolean;
-  exclude?: TokenKey;
-}) {
-  const options = TOKEN_KEYS.filter((k) => k !== exclude);
+// ─── Token selector panel (Uniswap-style overlay) ────────────────────────────
+interface TokenSelectPanelProps {
+  onSelect: (key: TokenKey) => void;
+  onClose: () => void;
+  excludeKey?: TokenKey | 'ETH';
+}
+
+function TokenSelectPanel({ onSelect, onClose, excludeKey }: TokenSelectPanelProps) {
+  const [search, setSearch] = useState('');
+  const filtered = TOKEN_KEYS.filter((k) => {
+    if (k === excludeKey) return false;
+    if (!search) return true;
+    return TOKENS[k].symbol.toLowerCase().includes(search.toLowerCase());
+  });
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={disabled}
-          className="flex items-center gap-1 h-8 px-3 font-semibold text-foreground border-border/60 hover:border-primary/60 min-w-[72px]"
-        >
-          {value}
-          <ChevronDown className="h-3 w-3 opacity-60" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[120px]">
-        {options.map((key) => (
-          <DropdownMenuItem
+    <div className="absolute inset-0 z-10 bg-background rounded-2xl flex flex-col border border-border/50 shadow-xl">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
+        <span className="font-semibold text-base">Select a token</span>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      <div className="px-4 pt-3 pb-2">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            autoFocus
+            placeholder="Search token name"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 rounded-xl bg-card border border-border/60 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+          />
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-2 space-y-1">
+        {filtered.map((key) => (
+          <button
             key={key}
-            onSelect={() => onChange(key)}
-            className="flex items-center justify-between gap-4 cursor-pointer"
+            onClick={() => { onSelect(key); onClose(); }}
+            className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-card/80 transition-colors text-left"
           >
-            <span className="font-semibold">{TOKENS[key].symbol}</span>
-            <span className="text-xs text-muted-foreground truncate max-w-[80px]">
-              {TOKENS[key].address.slice(0, 6)}…
-            </span>
-          </DropdownMenuItem>
+            <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
+              {TOKENS[key].symbol.slice(0, 3)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-foreground">{TOKENS[key].symbol}</p>
+              <p className="text-xs text-muted-foreground truncate">{TOKENS[key].address}</p>
+            </div>
+          </button>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+        {filtered.length === 0 && (
+          <p className="text-center text-sm text-muted-foreground py-6">No tokens found</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Token badge button (lives inside swap row) ───────────────────────────────
+function TokenBadge({
+  symbol,
+  onClick,
+  disabled,
+}: {
+  symbol: string;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled || !onClick}
+      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-semibold text-sm transition-all
+        ${onClick && !disabled
+          ? 'bg-card border border-border/60 hover:border-primary/60 hover:bg-primary/5 cursor-pointer'
+          : 'bg-card border border-border/40 cursor-default'
+        }`}
+    >
+      <div className="h-5 w-5 rounded-full bg-primary/15 flex items-center justify-center text-[9px] font-bold text-primary">
+        {symbol.slice(0, 2)}
+      </div>
+      <span className="text-foreground">{symbol}</span>
+      {onClick && !disabled && <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+    </button>
   );
 }
 
@@ -217,6 +255,8 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
   // "from" is always ETH; "to" is the selected token (or vice-versa when flipped)
   const [selectedToken, setSelectedToken] = useState<TokenKey>('2048');
   const [isBuyMode, setIsBuyMode] = useState(true); // true = ETH -> token, false = token -> ETH
+  // null = panel closed; 'from' | 'to' = which side is picking
+  const [tokenSelectFor, setTokenSelectFor] = useState<'from' | 'to' | null>(null);
 
   const [inputAmount, setInputAmount] = useState('');
   const [outputAmount, setOutputAmount] = useState('');
@@ -543,92 +583,91 @@ export function SwapModal({ walletAddress, onSwapSuccess, sendTransaction, embed
               <p className="text-muted-foreground font-body">Please connect your wallet to trade</p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
 
-              {/* Token selector */}
-              <div className="flex items-center justify-between bg-card/40 rounded-xl px-4 py-3 border border-border/50">
-                <span className="text-sm text-muted-foreground">Select token</span>
-                <div className="flex gap-2">
-                  {TOKEN_KEYS.map((key) => (
-                    <button
-                      key={key}
-                      onClick={() => setSelectedToken(key)}
-                      disabled={isLoading}
-                      className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all border ${
-                        selectedToken === key
-                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                          : 'bg-transparent text-muted-foreground border-border/50 hover:border-primary/50 hover:text-foreground'
-                      }`}
-                    >
-                      {TOKENS[key].symbol}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {/* Swap card — relative so the token select panel overlays it */}
+              <div className="relative">
 
-              {/* Input Section */}
-              <div className="bg-card/50 rounded-xl p-4 border border-border/50 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">You pay</span>
-                  <span className="text-xs text-muted-foreground">
-                    Balance: {parseFloat(inputBalanceDisplay).toFixed(4)} {inputTokenLabel}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    placeholder="0.0"
-                    value={inputAmount}
-                    onChange={(e) => setInputAmount(e.target.value)}
-                    className="flex-1 text-lg font-mono bg-transparent border-none focus-visible:ring-0 p-0 h-auto"
-                    disabled={isLoading}
+                {/* Token select overlay panel */}
+                {tokenSelectFor && (
+                  <TokenSelectPanel
+                    excludeKey={tokenSelectFor === 'from'
+                      ? (isBuyMode ? undefined : selectedToken)
+                      : (isBuyMode ? selectedToken : undefined)}
+                    onSelect={(key) => setSelectedToken(key)}
+                    onClose={() => setTokenSelectFor(null)}
                   />
+                )}
+
+                {/* Input (You pay) */}
+                <div className="bg-card/50 rounded-t-2xl rounded-b-none p-4 border border-border/50 border-b-0">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-sm text-muted-foreground">You pay</span>
+                    <span className="text-xs text-muted-foreground">
+                      Balance: {parseFloat(inputBalanceDisplay).toFixed(4)} {inputTokenLabel}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={setMaxAmount}
-                      className="text-xs text-primary hover:text-primary/80"
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={inputAmount}
+                      onChange={(e) => setInputAmount(e.target.value)}
+                      className="flex-1 text-2xl font-semibold bg-transparent border-none focus:outline-none text-foreground placeholder:text-muted-foreground/50 min-w-0"
                       disabled={isLoading}
-                    >
-                      MAX
-                    </Button>
-                    <span className="font-semibold text-foreground">{inputTokenLabel}</span>
+                    />
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={setMaxAmount}
+                        disabled={isLoading}
+                        className="text-xs font-semibold text-primary hover:text-primary/80 px-1.5 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
+                      >
+                        MAX
+                      </button>
+                      <TokenBadge
+                        symbol={inputTokenLabel}
+                        onClick={isBuyMode ? undefined : () => !isLoading && setTokenSelectFor('from')}
+                        disabled={isLoading}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Toggle Direction */}
-              <div className="flex justify-center -my-1">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={toggleDirection}
-                  disabled={isLoading}
-                  className="rounded-full h-10 w-10 border-2 border-border bg-background hover:bg-primary/10 hover:border-primary transition-all"
-                >
-                  <ArrowDownUp className="h-4 w-4" />
-                </Button>
-              </div>
-
-              {/* Output Section */}
-              <div className="bg-card/50 rounded-xl p-4 border border-border/50 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">You receive</span>
+                {/* Flip button between rows */}
+                <div className="relative h-0 flex justify-center z-[5]">
+                  <button
+                    onClick={toggleDirection}
+                    disabled={isLoading}
+                    className="absolute -top-[1px] translate-y-[-50%] h-9 w-9 rounded-xl border-2 border-border bg-background hover:bg-primary/10 hover:border-primary flex items-center justify-center transition-all shadow-sm"
+                  >
+                    <ArrowDownUp className="h-4 w-4" />
+                  </button>
                 </div>
-                <div className="flex gap-2 items-center">
-                  <div className="flex-1 text-lg font-mono">
-                    {isQuoting ? (
-                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                    ) : (
-                      <span className={outputAmount ? 'text-foreground' : 'text-muted-foreground'}>
-                        {outputAmount || '0.0'}
-                      </span>
-                    )}
+
+                {/* Output (You receive) */}
+                <div className="bg-card/40 rounded-t-none rounded-b-2xl p-4 border border-border/50 border-t-0 pt-6">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-sm text-muted-foreground">You receive</span>
                   </div>
-                  <span className="font-semibold text-foreground">{outputTokenLabel}</span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 text-2xl font-semibold min-w-0">
+                      {isQuoting ? (
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      ) : (
+                        <span className={outputAmount ? 'text-foreground' : 'text-muted-foreground/50'}>
+                          {outputAmount || '0'}
+                        </span>
+                      )}
+                    </div>
+                    <TokenBadge
+                      symbol={outputTokenLabel}
+                      onClick={isBuyMode ? () => !isLoading && setTokenSelectFor('to') : undefined}
+                      disabled={isLoading}
+                    />
+                  </div>
                 </div>
-              </div>
+
+              </div>{/* /relative */}
 
               {/* Slippage */}
               <div className="flex items-center justify-between text-sm">
