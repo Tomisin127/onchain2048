@@ -884,6 +884,25 @@ export default function Game2048Page() {
               <div className="text-[9px] uppercase tracking-wider text-muted-foreground leading-none">Best</div>
               <div className="text-sm font-display font-bold text-foreground leading-tight">{highScore}</div>
             </div>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  aria-label="Open leaderboard"
+                >
+                  <Trophy className="h-4 w-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-sm">
+                <DialogHeader>
+                  <DialogTitle className="font-display">Leaderboard</DialogTitle>
+                </DialogHeader>
+                <Leaderboard currentAddress={walletAddr} />
+              </DialogContent>
+            </Dialog>
+
             <Button
               onClick={handleDisconnect}
               variant="ghost"
