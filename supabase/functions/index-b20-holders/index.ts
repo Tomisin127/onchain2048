@@ -66,8 +66,8 @@ function balanceOfCall(addr: string): string {
 function encodeAggregate3(addresses: string[]): string {
   const w = (v: number | bigint) => v.toString(16).padStart(64, "0");
   const n = addresses.length;
-  // Each Call3 tuple: target, allowFailure, bytesOffset(96), bytesLen(36), data(1 word padded)
-  const TUPLE_WORDS = 5;
+  // Each Call3 tuple: target, allowFailure, bytesOffset(96), bytesLen(36), data(2 words)
+  const TUPLE_WORDS = 6;
   const offsets: string[] = [];
   const tuples: string[] = [];
   for (let i = 0; i < n; i++) {
@@ -77,7 +77,7 @@ function encodeAggregate3(addresses: string[]): string {
         w(1) +
         w(96) +
         w(36) +
-        balanceOfCall(addresses[i]).slice(2).padEnd(64, "0"),
+        balanceOfCall(addresses[i]).slice(2).padEnd(128, "0"),
     );
   }
   // head: offset to array (32), then array length, offsets, tuples
