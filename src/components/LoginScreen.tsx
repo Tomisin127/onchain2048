@@ -1,7 +1,9 @@
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
+import { Leaderboard } from '@/components/Leaderboard';
 import { SpendPermissionConfig, SpendPermissionValues } from '@/components/SpendPermissionConfig';
+
 
 const MOVE_COST_USD = 0.0001;
 
