@@ -14,6 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
+      b20_holders: {
+        Row: {
+          address: string
+          balance_wei: number
+          updated_at: string
+        }
+        Insert: {
+          address: string
+          balance_wei?: number
+          updated_at?: string
+        }
+        Update: {
+          address?: string
+          balance_wei?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      high_scores: {
+        Row: {
+          address: string
+          created_at: string
+          id: string
+          score: number
+          updated_at: string
+        }
+        Insert: {
+          address: string
+          created_at?: string
+          id?: string
+          score?: number
+          updated_at?: string
+        }
+        Update: {
+          address?: string
+          created_at?: string
+          id?: string
+          score?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      indexer_state: {
+        Row: {
+          key: string
+          last_block: number | null
+          last_run_at: string | null
+        }
+        Insert: {
+          key: string
+          last_block?: number | null
+          last_run_at?: string | null
+        }
+        Update: {
+          key?: string
+          last_block?: number | null
+          last_run_at?: string | null
+        }
+        Relationships: []
+      }
       miniapp_notifications: {
         Row: {
           created_at: string
