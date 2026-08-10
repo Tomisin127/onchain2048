@@ -14,15 +14,21 @@ export interface HolderEntry {
 const B20_DECIMALS = 18;
 
 function toTokens(balanceWei: string | number): number {
-  try {
-    const wei = BigInt(String(balanceWei).split('.')[0]);
-    const whole = wei / BigInt(10) ** BigInt(B20_DECIMALS);
-    const frac = wei % BigInt(10) ** BigInt(B20_DECIMALS);
-    return Number(whole) + Number(frac) / 1e18;
-  } catch {
-    return 0;
+  const raw = String(balanceWei ?? '0');
+  // Postgres numerics can arrive as plain digits or in exponential notation.
+  if (/^\d+$/.test(raw)) {
+    try {
+      const wei = BigInt(raw);
+      const base = BigInt(10) ** BigInt(B20_DECIMALS);
+      return Number(wei / base) + Number(wei % base) / 1e18;
+    } catch {
+      /* fall through */
+    }
   }
+  const n = Number(raw);
+  return Number.isFinite(n) ? n / 1e18 : 0;
 }
+
 
 /** Live top-scores leaderboard, kept in sync through realtime updates. */
 export function useHighScoreLeaderboard(limit = 10) {
