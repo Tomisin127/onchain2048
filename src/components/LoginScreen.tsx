@@ -152,6 +152,9 @@ export function LoginScreen({
           <p className="text-xs text-muted-foreground">You pay gas fees · Sign once, then approve each move</p>
         </div>
       </Card>
-    </div>
+
+      <Leaderboard />
+      </div>
+
   );
 }
