@@ -25,6 +25,68 @@ const spendPermissionManagerAbi = parseAbi([
   "function isApproved((address account, address spender, address token, uint160 allowance, uint48 period, uint48 start, uint48 end, uint256 salt, bytes extraData) permission) external view returns (bool)",
 ]);
 
+// ---------------------------------------------------------------------------
+// Concurrency safety: every player's move is relayed from the SAME wallet, so
+// when several people play at once their transactions race for the next nonce.
+// Reading the nonce with `latest` (and without serialising) hands the same
+// nonce to multiple requests, so only one lands and the others fail with
+// "nonce too low" / "replacement transaction underpriced" — which is exactly
+// the "game stops working when several people play" report.
+//
+// Fixes:
+//  1. A promise chain serialises nonce allocation + submission per instance.
+//  2. A local counter tracks the next nonce, seeded from the PENDING count, so
+//     back-to-back sends never reuse a nonce even before the previous one is
+//     mined.
+//  3. Nonce errors resync from the chain and retry once.
+// ---------------------------------------------------------------------------
+let txQueue: Promise<unknown> = Promise.resolve();
+let nextNonce: number | null = null;
+
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const run = txQueue.then(task, task);
+  // Keep the chain alive even if a task rejects.
+  txQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+async function sendSerialized(
+  publicClient: any,
+  walletClient: any,
+  account: { address: `0x${string}` },
+  tx: { to: `0x${string}`; data: `0x${string}` },
+): Promise<`0x${string}`> {
+  return enqueue(async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (nextNonce === null) {
+        nextNonce = await publicClient.getTransactionCount({
+          address: account.address,
+          blockTag: "pending",
+        });
+      }
+      const nonce = nextNonce as number;
+      try {
+        const hash = await walletClient.sendTransaction({ ...tx, nonce });
+        nextNonce = nonce + 1;
+        return hash as `0x${string}`;
+      } catch (err) {
+        const msg = String((err as Error)?.message || err).toLowerCase();
+        const isNonceIssue =
+          msg.includes("nonce") ||
+          msg.includes("replacement") ||
+          msg.includes("already known");
+        console.error(`[relay] send failed (attempt ${attempt + 1}), nonce ${nonce}:`, msg);
+        if (!isNonceIssue) throw err;
+        // Resync from chain and retry with a fresh nonce.
+        nextNonce = null;
+        await new Promise((r) => setTimeout(r, 300 + attempt * 400));
+      }
+    }
+    throw new Error("Relayer could not submit the transaction (nonce contention)");
+  });
+}
+
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -117,13 +179,9 @@ serve(async (req: Request) => {
       
       console.log("[relay] approveWithSignature calldata with ERC-8021 attribution appended");
       
-      // Get current nonce
-      const approveNonce = await publicClient.getTransactionCount({ address: account.address });
-      
-      const approveHash = await walletClient.sendTransaction({
+      const approveHash = await sendSerialized(publicClient, walletClient, account, {
         to: SPEND_PERMISSION_MANAGER,
         data: approveDataWithAttribution,
-        nonce: approveNonce,
       });
       console.log("[relay] approveWithSignature tx:", approveHash);
       txHashes.push(approveHash);
@@ -144,13 +202,9 @@ serve(async (req: Request) => {
     
     console.log("[relay] spend calldata with ERC-8021 attribution appended");
     
-    // Get current nonce to avoid nonce-too-low errors
-    const spendNonce = await publicClient.getTransactionCount({ address: account.address });
-    
-    const spendHash = await walletClient.sendTransaction({
+    const spendHash = await sendSerialized(publicClient, walletClient, account, {
       to: SPEND_PERMISSION_MANAGER,
       data: spendDataWithAttribution,
-      nonce: spendNonce,
     });
     console.log("[relay] ✅ spend tx:", spendHash);
     txHashes.push(spendHash);

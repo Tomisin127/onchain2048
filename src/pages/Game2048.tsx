@@ -8,8 +8,12 @@ import { useSelfPayWallet } from '@/hooks/useSelfPayWallet';
 import type { SpendPermissionValues } from '@/components/SpendPermissionConfig';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Trophy } from 'lucide-react';
 import { GameBoard } from '@/components/GameBoard';
+import { Leaderboard } from '@/components/Leaderboard';
+import { submitHighScore } from '@/hooks/useLeaderboard';
+import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogHeader } from '@/components/ui/dialog';
+
 
 import { WalletPanel } from '@/components/WalletPanel';
 import { LoginScreen } from '@/components/LoginScreen';
@@ -806,6 +810,16 @@ export default function Game2048Page() {
     [isSelfPayConnected, selfPaySendArbitraryTx, sendTransaction]
   );
   const { displayName: baseDisplayName } = useBaseName(walletAddr);
+
+  // Publish the player's best score to the live leaderboard (debounced).
+  useEffect(() => {
+    if (!walletAddr || highScore <= 0) return;
+    const id = setTimeout(() => {
+      void submitHighScore(walletAddr, highScore);
+    }, 1500);
+    return () => clearTimeout(id);
+  }, [walletAddr, highScore]);
+
   const connectionType = authenticated 
     ? 'Privy Email' 
     : isSelfPayConnected 
@@ -880,6 +894,25 @@ export default function Game2048Page() {
               <div className="text-[9px] uppercase tracking-wider text-muted-foreground leading-none">Best</div>
               <div className="text-sm font-display font-bold text-foreground leading-tight">{highScore}</div>
             </div>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  aria-label="Open leaderboard"
+                >
+                  <Trophy className="h-4 w-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-sm">
+                <DialogHeader>
+                  <DialogTitle className="font-display">Leaderboard</DialogTitle>
+                </DialogHeader>
+                <Leaderboard currentAddress={walletAddr} />
+              </DialogContent>
+            </Dialog>
+
             <Button
               onClick={handleDisconnect}
               variant="ghost"

@@ -1,7 +1,9 @@
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
+import { Leaderboard } from '@/components/Leaderboard';
 import { SpendPermissionConfig, SpendPermissionValues } from '@/components/SpendPermissionConfig';
+
 
 const MOVE_COST_USD = 0.0001;
 
@@ -77,9 +79,11 @@ export function LoginScreen({
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="p-8 max-w-md w-full text-center space-y-6 glass-card animate-fade-in">
+    <div className="min-h-screen bg-background flex items-start justify-center p-4 py-8 overflow-y-auto">
+      <div className="max-w-md w-full space-y-4">
+      <Card className="p-8 w-full text-center space-y-6 glass-card animate-fade-in">
         <div className="space-y-2">
+
           <h1 className="text-5xl font-display font-bold gradient-text">2048</h1>
           <p className="text-muted-foreground text-sm font-body">On-Chain Edition</p>
         </div>
@@ -148,6 +152,11 @@ export function LoginScreen({
           <p className="text-xs text-muted-foreground">You pay gas fees · Sign once, then approve each move</p>
         </div>
       </Card>
+
+      <Leaderboard />
+      </div>
     </div>
+
+
   );
 }
