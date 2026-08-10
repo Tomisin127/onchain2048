@@ -179,13 +179,9 @@ serve(async (req: Request) => {
       
       console.log("[relay] approveWithSignature calldata with ERC-8021 attribution appended");
       
-      // Get current nonce
-      const approveNonce = await publicClient.getTransactionCount({ address: account.address });
-      
-      const approveHash = await walletClient.sendTransaction({
+      const approveHash = await sendSerialized(publicClient, walletClient, account, {
         to: SPEND_PERMISSION_MANAGER,
         data: approveDataWithAttribution,
-        nonce: approveNonce,
       });
       console.log("[relay] approveWithSignature tx:", approveHash);
       txHashes.push(approveHash);
@@ -206,13 +202,9 @@ serve(async (req: Request) => {
     
     console.log("[relay] spend calldata with ERC-8021 attribution appended");
     
-    // Get current nonce to avoid nonce-too-low errors
-    const spendNonce = await publicClient.getTransactionCount({ address: account.address });
-    
-    const spendHash = await walletClient.sendTransaction({
+    const spendHash = await sendSerialized(publicClient, walletClient, account, {
       to: SPEND_PERMISSION_MANAGER,
       data: spendDataWithAttribution,
-      nonce: spendNonce,
     });
     console.log("[relay] ✅ spend tx:", spendHash);
     txHashes.push(spendHash);

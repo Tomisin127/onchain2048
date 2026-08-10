@@ -5,3 +5,5 @@ verify_jwt = false
 
 [functions.ai-2048-advisor]
 verify_jwt = false
+[functions.index-b20-holders]
+verify_jwt = false
