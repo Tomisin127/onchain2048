@@ -810,6 +810,16 @@ export default function Game2048Page() {
     [isSelfPayConnected, selfPaySendArbitraryTx, sendTransaction]
   );
   const { displayName: baseDisplayName } = useBaseName(walletAddr);
+
+  // Publish the player's best score to the live leaderboard (debounced).
+  useEffect(() => {
+    if (!walletAddr || highScore <= 0) return;
+    const id = setTimeout(() => {
+      void submitHighScore(walletAddr, highScore);
+    }, 1500);
+    return () => clearTimeout(id);
+  }, [walletAddr, highScore]);
+
   const connectionType = authenticated 
     ? 'Privy Email' 
     : isSelfPayConnected 
