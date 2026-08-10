@@ -62,32 +62,28 @@ function balanceOfCall(addr: string): string {
   return "0x70a08231" + addr.slice(2).toLowerCase().padStart(64, "0");
 }
 
-// Multicall3 aggregate3((address,bool,bytes)[]) — manual ABI encoding
+// Multicall3 aggregate3((address target, bool allowFailure, bytes callData)[])
 function encodeAggregate3(addresses: string[]): string {
-  const words: string[] = [];
+  const w = (v: number | bigint) => v.toString(16).padStart(64, "0");
   const n = addresses.length;
-  // offset to array data
-  words.push((32).toString(16).padStart(64, "0"));
-  words.push(n.toString(16).padStart(64, "0"));
-  // each tuple is dynamic (contains bytes) → offsets relative to start of array data
-  const tupleSize = 32 * 3 + 32 + 32; // target, allowFailure, offset-to-bytes + len + data(1 word)
+  // Each Call3 tuple: target, allowFailure, bytesOffset(96), bytesLen(36), data(1 word padded)
+  const TUPLE_WORDS = 5;
   const offsets: string[] = [];
   const tuples: string[] = [];
   for (let i = 0; i < n; i++) {
-    offsets.push((32 * n + i * tupleSize).toString(16).padStart(64, "0"));
-    const data = balanceOfCall(addresses[i]).slice(2); // 4 + 32 bytes = 36 bytes
+    offsets.push(w(32 * n + i * TUPLE_WORDS * 32));
     tuples.push(
-      addresses[i].slice(2).toLowerCase().padStart(64, "0") + // target
-        (1).toString(16).padStart(64, "0") + // allowFailure = true
-        (96).toString(16).padStart(64, "0") + // offset to bytes inside tuple
-        (36).toString(16).padStart(64, "0") + // bytes length
-        data.padEnd(64, "0"),
+      B20.slice(2).toLowerCase().padStart(64, "0") +
+        w(1) +
+        w(96) +
+        w(36) +
+        balanceOfCall(addresses[i]).slice(2).padEnd(64, "0"),
     );
   }
-  // NOTE: target for balanceOf must be the token, not the holder
-  const fixedTuples = tuples.map((t) => B20.slice(2).toLowerCase().padStart(64, "0") + t.slice(64));
-  return "0x82ad56cb" + words.join("") + offsets.join("") + fixedTuples.join("");
+  // head: offset to array (32), then array length, offsets, tuples
+  return "0x82ad56cb" + w(32) + w(n) + offsets.join("") + tuples.join("");
 }
+
 
 function decodeAggregate3(hex: string, count: number): bigint[] {
   const body = hex.slice(2);
