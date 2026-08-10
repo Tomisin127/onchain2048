@@ -53,6 +53,14 @@ function Row({
   );
 }
 
+/** Keep huge holder balances readable inside the compact row. */
+function formatAmount(n: number) {
+  if (n >= 1_000_000) {
+    return n.toLocaleString(undefined, { notation: 'compact', maximumFractionDigits: 2 });
+  }
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
 function Empty({ label }: { label: string }) {
   return <p className="py-4 text-center text-xs text-muted-foreground font-body">{label}</p>;
 }
@@ -118,7 +126,7 @@ export function Leaderboard({ currentAddress = '', className, limit = 10 }: Lead
                   key={h.address}
                   index={i}
                   address={h.address}
-                  value={`${h.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })} B20`}
+                  value={`${formatAmount(h.balance)} B20`}
                   highlight={!!me && h.address.toLowerCase() === me}
                 />
               ))}
