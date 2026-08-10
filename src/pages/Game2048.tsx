@@ -8,8 +8,12 @@ import { useSelfPayWallet } from '@/hooks/useSelfPayWallet';
 import type { SpendPermissionValues } from '@/components/SpendPermissionConfig';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Trophy } from 'lucide-react';
 import { GameBoard } from '@/components/GameBoard';
+import { Leaderboard } from '@/components/Leaderboard';
+import { submitHighScore } from '@/hooks/useLeaderboard';
+import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogHeader } from '@/components/ui/dialog';
+
 
 import { WalletPanel } from '@/components/WalletPanel';
 import { LoginScreen } from '@/components/LoginScreen';
