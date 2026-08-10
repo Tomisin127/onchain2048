@@ -155,6 +155,8 @@ export function LoginScreen({
 
       <Leaderboard />
       </div>
+    </div>
+
 
   );
 }
