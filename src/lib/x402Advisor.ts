@@ -61,10 +61,11 @@ export async function askX402Advisor(opts: {
       walletClient.signTypedData({
         account: address,
         domain: message.domain,
-        types: message.types as never,
-        primaryType: message.primaryType as never,
+        types: message.types,
+        primaryType: message.primaryType,
         message: message.message,
-      }),
+      } as never),
+
   };
 
   // Build a v2 client and register the EVM "exact" scheme with a wildcard
