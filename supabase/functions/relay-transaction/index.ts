@@ -19,6 +19,21 @@ const ERC_8021_SUFFIX_RAW = Attribution.toDataSuffix({
 });
 const ERC_8021_SUFFIX = ERC_8021_SUFFIX_RAW.startsWith('0x') ? ERC_8021_SUFFIX_RAW.slice(2) : ERC_8021_SUFFIX_RAW;
 
+const ONCHAIN_2048_ADDRESS = "0xaBF31EC13598625Db0B918579249e51513ea07d7";
+const B20_TOKEN_ADDRESS = "0xb200000000000000000000ae0575aaf8de90b28d";
+
+const gameAbi = parseAbi([
+  "function makeMove(uint8 direction, bool useB20) payable",
+  "function moveCostETH() view returns (uint256)",
+  "function moveCostB20() view returns (uint256)",
+]);
+
+const erc20Abi = parseAbi([
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function balanceOf(address owner) view returns (uint256)",
+  "function approve(address spender, uint256 value) returns (bool)",
+]);
+
 const spendPermissionManagerAbi = parseAbi([
   "function approveWithSignature((address account, address spender, address token, uint160 allowance, uint48 period, uint48 start, uint48 end, uint256 salt, bytes extraData) permission, bytes signature) external",
   "function spend((address account, address spender, address token, uint160 allowance, uint48 period, uint48 start, uint48 end, uint256 salt, bytes extraData) permission, uint160 value) external",
