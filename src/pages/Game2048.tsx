@@ -408,7 +408,10 @@ export default function Game2048Page() {
   // A move is allowed only if the resulting transaction can actually settle:
   //  - B20 move  → needs gas (ETH) only; B20 alone is NOT enough.
   //  - ETH move  → needs move cost + gas.
-  const canMove = willUseB20 ? hasGasForMove : canPayWithEth;
+  //  - Sponsored Base wallet → the game wallet pays the fee AND gas, so the
+  //    player's own balance is irrelevant.
+  const canMove =
+    (isBaseConnected && !!baseAddress) || (willUseB20 ? hasGasForMove : canPayWithEth);
 
   // Stop auto-play immediately whenever the balance is too low to continue.
   useEffect(() => {
