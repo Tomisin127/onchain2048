@@ -342,6 +342,7 @@ export function useBaseSubAccount() {
     connect,
     disconnect,
     sendTransaction,
+    sendMove,
     requestSpendPermission,
     hasSpendPermission: !!spendPermission && !!spendSignature,
   };

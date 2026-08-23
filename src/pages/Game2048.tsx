@@ -59,6 +59,7 @@ export default function Game2048Page() {
     isConnecting: isBaseConnecting,
     error: baseWalletError,
     sendTransaction: baseSendTx,
+    sendMove: baseSendMove,
   } = useBaseSubAccount();
 
   const {
@@ -545,7 +546,7 @@ export default function Game2048Page() {
 
         void (async () => {
           try {
-            const callsId = await baseSendTx(moveCostWei);
+            const callsId = await baseSendMove(DIRECTION_TO_UINT[direction]);
             if (callsId) {
               setPendingTransactions(prev => [...prev, callsId]);
               console.log('✅ Sub Account tx sent:', callsId);
