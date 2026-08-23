@@ -36,6 +36,7 @@ import {
   encodeMakeMove,
   encodeStartNewGame,
   encodeB20Approve,
+  DIRECTION_TO_UINT,
 } from '@/lib/contract';
 
 // Contract charges a fixed 0.0001 ETH per move (moveCostETH on-chain).
@@ -59,6 +60,7 @@ export default function Game2048Page() {
     isConnecting: isBaseConnecting,
     error: baseWalletError,
     sendTransaction: baseSendTx,
+    sendMove: baseSendMove,
   } = useBaseSubAccount();
 
   const {
@@ -406,7 +408,10 @@ export default function Game2048Page() {
   // A move is allowed only if the resulting transaction can actually settle:
   //  - B20 move  → needs gas (ETH) only; B20 alone is NOT enough.
   //  - ETH move  → needs move cost + gas.
-  const canMove = willUseB20 ? hasGasForMove : canPayWithEth;
+  //  - Sponsored Base wallet → the game wallet pays the fee AND gas, so the
+  //    player's own balance is irrelevant.
+  const canMove =
+    (isBaseConnected && !!baseAddress) || (willUseB20 ? hasGasForMove : canPayWithEth);
 
   // Stop auto-play immediately whenever the balance is too low to continue.
   useEffect(() => {
@@ -545,7 +550,7 @@ export default function Game2048Page() {
 
         void (async () => {
           try {
-            const callsId = await baseSendTx(moveCostWei);
+            const callsId = await baseSendMove(DIRECTION_TO_UINT[direction]);
             if (callsId) {
               setPendingTransactions(prev => [...prev, callsId]);
               console.log('✅ Sub Account tx sent:', callsId);

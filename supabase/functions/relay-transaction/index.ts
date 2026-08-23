@@ -19,6 +19,21 @@ const ERC_8021_SUFFIX_RAW = Attribution.toDataSuffix({
 });
 const ERC_8021_SUFFIX = ERC_8021_SUFFIX_RAW.startsWith('0x') ? ERC_8021_SUFFIX_RAW.slice(2) : ERC_8021_SUFFIX_RAW;
 
+const ONCHAIN_2048_ADDRESS = "0xaBF31EC13598625Db0B918579249e51513ea07d7";
+const B20_TOKEN_ADDRESS = "0xb200000000000000000000ae0575aaf8de90b28d";
+
+const gameAbi = parseAbi([
+  "function makeMove(uint8 direction, bool useB20) payable",
+  "function moveCostETH() view returns (uint256)",
+  "function moveCostB20() view returns (uint256)",
+]);
+
+const erc20Abi = parseAbi([
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function balanceOf(address owner) view returns (uint256)",
+  "function approve(address spender, uint256 value) returns (bool)",
+]);
+
 const spendPermissionManagerAbi = parseAbi([
   "function approveWithSignature((address account, address spender, address token, uint160 allowance, uint48 period, uint48 start, uint48 end, uint256 salt, bytes extraData) permission, bytes signature) external",
   "function spend((address account, address spender, address token, uint160 allowance, uint48 period, uint48 start, uint48 end, uint256 salt, bytes extraData) permission, uint160 value) external",
@@ -54,7 +69,7 @@ async function sendSerialized(
   publicClient: any,
   walletClient: any,
   account: { address: `0x${string}` },
-  tx: { to: `0x${string}`; data: `0x${string}` },
+  tx: { to: `0x${string}`; data: `0x${string}`; value?: bigint },
 ): Promise<`0x${string}`> {
   return enqueue(async () => {
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -111,7 +126,76 @@ serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { permission, signature, amount } = body;
+    const { permission, signature, amount, direction } = body;
+
+    // ---------------------------------------------------------------------
+    // Sponsored move: the relayer (spend permission wallet) calls
+    // makeMove() on the OnChain2048 contract, paying the move cost in B20
+    // (or ETH fallback) AND the gas from its own balance.
+    // ---------------------------------------------------------------------
+    if (direction !== undefined && direction !== null) {
+      const dir = Number(direction);
+      if (!Number.isInteger(dir) || dir < 0 || dir > 3) {
+        return new Response(JSON.stringify({ error: "Invalid direction" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const publicClient = createPublicClient({ chain: base, transport: http("https://mainnet.base.org") });
+      const walletClient = createWalletClient({ account, chain: base, transport: http("https://mainnet.base.org") });
+
+      const [b20Balance, costB20, costETH] = await Promise.all([
+        publicClient.readContract({ address: B20_TOKEN_ADDRESS, abi: erc20Abi, functionName: "balanceOf", args: [account.address] }) as Promise<bigint>,
+        publicClient.readContract({ address: ONCHAIN_2048_ADDRESS, abi: gameAbi, functionName: "moveCostB20" }).catch(() => 10n * 10n ** 18n) as Promise<bigint>,
+        publicClient.readContract({ address: ONCHAIN_2048_ADDRESS, abi: gameAbi, functionName: "moveCostETH" }).catch(() => 100000000000000n) as Promise<bigint>,
+      ]);
+
+      const useB20 = b20Balance >= costB20;
+      const txHashes: string[] = [];
+
+      if (useB20) {
+        const allowance = (await publicClient.readContract({
+          address: B20_TOKEN_ADDRESS,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [account.address, ONCHAIN_2048_ADDRESS],
+        })) as bigint;
+
+        if (allowance < costB20) {
+          const approveData = encodeFunctionData({
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [ONCHAIN_2048_ADDRESS, 2n ** 256n - 1n],
+          });
+          const approveHash = await sendSerialized(publicClient, walletClient, account, {
+            to: B20_TOKEN_ADDRESS,
+            data: (approveData + ERC_8021_SUFFIX) as `0x${string}`,
+          });
+          console.log("[relay] B20 approve tx:", approveHash);
+          txHashes.push(approveHash);
+          await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        }
+      }
+
+      const moveData = encodeFunctionData({
+        abi: gameAbi,
+        functionName: "makeMove",
+        args: [dir, useB20],
+      });
+
+      const moveHash = await sendSerialized(publicClient, walletClient, account, {
+        to: ONCHAIN_2048_ADDRESS,
+        data: (moveData + ERC_8021_SUFFIX) as `0x${string}`,
+        value: useB20 ? 0n : costETH,
+      });
+      console.log("[relay] ✅ sponsored makeMove tx:", moveHash, { dir, useB20 });
+      txHashes.push(moveHash);
+
+      return new Response(JSON.stringify({ success: true, useB20, txHashes }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!permission || !signature || !amount) {
       return new Response(

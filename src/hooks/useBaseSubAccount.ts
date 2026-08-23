@@ -306,6 +306,28 @@ export function useBaseSubAccount() {
     [spendPermission, spendSignature]
   );
 
+  // Sponsored move: the game (spend permission) wallet calls makeMove() on the
+  // OnChain2048 contract and pays the B20/ETH move cost plus gas itself.
+  const sendMove = useCallback(async (direction: number): Promise<string> => {
+    const { data, error: invokeError } = await supabase.functions.invoke('relay-transaction', {
+      body: { direction },
+    });
+
+    if (invokeError) {
+      console.error('[v0] Sponsored move relay error:', invokeError);
+      throw new Error(invokeError.message || 'Sponsored move relay failed');
+    }
+    if (data?.error) {
+      console.error('[v0] Sponsored move relayer error:', data.error);
+      throw new Error(data.error);
+    }
+
+    const txHash = data?.txHashes?.[data.txHashes.length - 1] || '';
+    if (!txHash) throw new Error('Sponsored move sent but tx hash was missing');
+    console.log('[v0] ✅ Sponsored makeMove tx:', txHash, 'useB20:', data?.useB20);
+    return txHash;
+  }, []);
+
   const requestSpendPermission = useCallback(async () => null, []);
 
   return {
@@ -320,6 +342,7 @@ export function useBaseSubAccount() {
     connect,
     disconnect,
     sendTransaction,
+    sendMove,
     requestSpendPermission,
     hasSpendPermission: !!spendPermission && !!spendSignature,
   };
