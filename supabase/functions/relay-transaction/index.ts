@@ -69,7 +69,7 @@ async function sendSerialized(
   publicClient: any,
   walletClient: any,
   account: { address: `0x${string}` },
-  tx: { to: `0x${string}`; data: `0x${string}` },
+  tx: { to: `0x${string}`; data: `0x${string}`; value?: bigint },
 ): Promise<`0x${string}`> {
   return enqueue(async () => {
     for (let attempt = 0; attempt < 3; attempt++) {
