@@ -36,6 +36,7 @@ import {
   encodeMakeMove,
   encodeStartNewGame,
   encodeB20Approve,
+  DIRECTION_TO_UINT,
 } from '@/lib/contract';
 
 // Contract charges a fixed 0.0001 ETH per move (moveCostETH on-chain).
