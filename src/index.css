@@ -192,3 +192,82 @@
 .gradient-btn:hover {
   background: linear-gradient(135deg, hsl(217 91% 55%), hsl(270 70% 55%));
 }
+
+/* ==== Tactile board & tile styling ==== */
+.game-board-shell {
+  background: linear-gradient(160deg, hsl(var(--game-board)) 0%, hsl(222 45% 7%) 100%);
+  box-shadow:
+    inset 0 2px 10px hsl(222 47% 2% / 0.55),
+    0 16px 40px -16px hsl(222 47% 2% / 0.9);
+}
+
+.board-cell {
+  background: hsl(var(--game-cell));
+  box-shadow: inset 0 1px 4px hsl(222 47% 2% / 0.45);
+}
+
+.tile-text {
+  text-shadow: 0 1px 3px hsl(222 47% 2% / 0.5);
+}
+
+/* Gradient tile fills with an inner highlight; bigger tiles carry a colored glow */
+.tile-2 {
+  background: linear-gradient(145deg, hsl(210 80% 64%), hsl(210 75% 52%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.3), inset 0 -3px 6px hsl(222 47% 4% / 0.25),
+    0 4px 12px -6px hsl(210 80% 55% / 0.45);
+}
+.tile-4 {
+  background: linear-gradient(145deg, hsl(210 85% 60%), hsl(210 80% 46%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.3), inset 0 -3px 6px hsl(222 47% 4% / 0.25),
+    0 4px 12px -6px hsl(210 85% 50% / 0.5);
+}
+.tile-8 {
+  background: linear-gradient(145deg, hsl(270 65% 62%), hsl(270 65% 50%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.3), inset 0 -3px 6px hsl(222 47% 4% / 0.28),
+    0 5px 14px -6px hsl(270 65% 55% / 0.5);
+}
+.tile-16 {
+  background: linear-gradient(145deg, hsl(270 70% 56%), hsl(270 70% 44%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.28), inset 0 -3px 6px hsl(222 47% 4% / 0.3),
+    0 5px 14px -6px hsl(270 70% 50% / 0.55);
+}
+.tile-32 {
+  background: linear-gradient(145deg, hsl(330 70% 58%), hsl(330 70% 46%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.28), inset 0 -3px 6px hsl(222 47% 4% / 0.3),
+    0 5px 14px -6px hsl(330 70% 52% / 0.55);
+}
+.tile-64 {
+  background: linear-gradient(145deg, hsl(330 80% 52%), hsl(330 80% 40%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.28), inset 0 -3px 6px hsl(222 47% 4% / 0.3),
+    0 6px 16px -6px hsl(330 80% 46% / 0.6);
+}
+.tile-128 {
+  background: linear-gradient(145deg, hsl(25 85% 58%), hsl(25 85% 44%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.32), inset 0 -3px 6px hsl(222 47% 4% / 0.3),
+    0 6px 16px -6px hsl(25 85% 52% / 0.6), 0 0 18px -6px hsl(25 85% 55% / 0.55);
+}
+.tile-256 {
+  background: linear-gradient(145deg, hsl(25 90% 52%), hsl(25 90% 38%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.32), inset 0 -3px 6px hsl(222 47% 4% / 0.3),
+    0 6px 16px -6px hsl(25 90% 46% / 0.65), 0 0 20px -6px hsl(25 90% 52% / 0.6);
+}
+.tile-512 {
+  background: linear-gradient(145deg, hsl(0 78% 58%), hsl(0 78% 44%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.32), inset 0 -3px 6px hsl(222 47% 4% / 0.3),
+    0 6px 18px -6px hsl(0 78% 50% / 0.65), 0 0 22px -6px hsl(0 78% 55% / 0.6);
+}
+.tile-1024 {
+  background: linear-gradient(145deg, hsl(0 82% 50%), hsl(0 82% 36%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.32), inset 0 -3px 6px hsl(222 47% 4% / 0.3),
+    0 6px 18px -6px hsl(0 82% 44% / 0.7), 0 0 24px -6px hsl(0 82% 50% / 0.65);
+}
+.tile-2048 {
+  background: linear-gradient(145deg, hsl(50 92% 58%), hsl(40 95% 42%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.4), inset 0 -3px 6px hsl(222 47% 4% / 0.3),
+    0 6px 18px -6px hsl(50 90% 48% / 0.75), 0 0 26px -6px hsl(50 90% 55% / 0.7);
+}
+.tile-super {
+  background: linear-gradient(145deg, hsl(270 70% 62%), hsl(300 70% 42%));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.35), inset 0 -3px 6px hsl(222 47% 4% / 0.3),
+    0 6px 18px -6px hsl(280 70% 48% / 0.7), 0 0 26px -6px hsl(285 70% 55% / 0.65);
+}

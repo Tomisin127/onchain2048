@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { TileData, Direction } from '@/types/game';
+import { loadHighScore, saveHighScore } from '@/lib/highScore';
 
 let tileIdCounter = 0;
 const nextId = () => ++tileIdCounter;
@@ -59,7 +60,7 @@ function slideRowLeft(row: number[]): { result: number[]; points: number; moved:
   return { result, points, moved, mergedIndices };
 }
 
-export function use2048Game() {
+export function use2048Game(walletAddress?: string) {
   const [tiles, setTiles] = useState<TileData[]>([]);
   const [score, setScore] = useState(0);
   const [highScore, setHighScore] = useState(0);
@@ -167,20 +168,21 @@ export function use2048Game() {
     setLastDirection(null);
   }, []);
 
-  // Load high score
+  // Load the high score scoped to the active wallet. Scores are stored per
+  // address, so switching wallets never publishes one player's best under
+  // another address.
   useEffect(() => {
-    const saved = localStorage.getItem('highScore2048');
-    if (saved) setHighScore(parseInt(saved));
+    setHighScore(loadHighScore(walletAddress));
     initGame();
-  }, [initGame]);
+  }, [walletAddress, initGame]);
 
-  // Update high score
+  // Update high score (persisted under the active wallet's key)
   useEffect(() => {
     if (score > highScore) {
       setHighScore(score);
-      localStorage.setItem('highScore2048', score.toString());
+      saveHighScore(walletAddress, score);
     }
-  }, [score, highScore]);
+  }, [score, highScore, walletAddress]);
 
   // Rotate board 90° clockwise
   const rotateBoard = (board: number[][]): number[][] => {
