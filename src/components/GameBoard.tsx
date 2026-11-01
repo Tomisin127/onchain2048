@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { TileData } from '@/types/game';
+import { cn } from '@/lib/utils';
 
 const DEFAULT_CELL_SIZE = 68; // px per cell
 const GAP = 10; // px gap
@@ -8,27 +9,18 @@ function getTilePosition(index: number, cellSize: number): number {
   return index * (cellSize + GAP);
 }
 
-function getTileColorClass(value: number): string {
-  const map: Record<number, string> = {
-    2: 'bg-tile-2',
-    4: 'bg-tile-4',
-    8: 'bg-tile-8',
-    16: 'bg-tile-16',
-    32: 'bg-tile-32',
-    64: 'bg-tile-64',
-    128: 'bg-tile-128 animate-sparkle',
-    256: 'bg-tile-256 animate-sparkle',
-    512: 'bg-tile-512 animate-sparkle',
-    1024: 'bg-tile-1024 animate-sparkle',
-    2048: 'bg-tile-2048 animate-sparkle',
-  };
-  return map[value] || 'bg-accent animate-sparkle';
+// Gradient fills + colored glow live in index.css (.tile-2 … .tile-2048).
+// Unknown values (4096+) share the .tile-super style.
+function getTileClass(value: number): string {
+  const known = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+  return known.includes(value) ? `tile-${value}` : 'tile-super';
 }
 
-function getFontSize(value: number): string {
-  if (value >= 1024) return 'text-lg';
-  if (value >= 128) return 'text-xl';
-  return 'text-2xl';
+// Tile label scales with the actual cell size instead of fixed text classes.
+function getFontSize(value: number, cellSize: number): number {
+  if (value >= 1024) return Math.round(cellSize * 0.28);
+  if (value >= 128) return Math.round(cellSize * 0.32);
+  return Math.round(cellSize * 0.4);
 }
 
 interface GameBoardProps {
@@ -36,14 +28,15 @@ interface GameBoardProps {
   onTouchStart: (e: React.TouchEvent) => void;
   onTouchEnd: (e: React.TouchEvent) => void;
   cellSize?: number;
+  gameOver?: boolean;
 }
 
-export function GameBoard({ tiles, onTouchStart, onTouchEnd, cellSize = DEFAULT_CELL_SIZE }: GameBoardProps) {
+export function GameBoard({ tiles, onTouchStart, onTouchEnd, cellSize = DEFAULT_CELL_SIZE, gameOver = false }: GameBoardProps) {
   const boardSize = cellSize * 4 + GAP * 5;
 
   return (
     <div
-      className="relative bg-game-board rounded-2xl touch-none select-none"
+      className="relative game-board-shell rounded-2xl touch-none select-none"
       style={{ width: boardSize, height: boardSize, padding: GAP }}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
@@ -55,7 +48,7 @@ export function GameBoard({ tiles, onTouchStart, onTouchEnd, cellSize = DEFAULT_
         return (
           <div
             key={`cell-${i}`}
-            className="absolute rounded-xl bg-game-cell"
+            className="absolute rounded-xl board-cell"
             style={{
               width: cellSize,
               height: cellSize,
@@ -70,10 +63,15 @@ export function GameBoard({ tiles, onTouchStart, onTouchEnd, cellSize = DEFAULT_
       {tiles.map((tile) => (
         <motion.div
           key={tile.id}
-          className={`absolute rounded-xl flex items-center justify-center font-display font-bold text-foreground shadow-lg ${getTileColorClass(tile.value)} ${getFontSize(tile.value)} ${tile.value === 2048 ? 'ring-2 ring-tile-2048' : ''}`}
+          className={cn(
+            'absolute rounded-xl flex items-center justify-center font-display font-bold text-foreground tile-text',
+            getTileClass(tile.value),
+            tile.value === 2048 && 'ring-2 ring-tile-2048',
+          )}
           style={{
             width: cellSize,
             height: cellSize,
+            fontSize: getFontSize(tile.value, cellSize),
           }}
           initial={
             tile.isNew
@@ -106,6 +104,19 @@ export function GameBoard({ tiles, onTouchStart, onTouchEnd, cellSize = DEFAULT_
           {tile.value}
         </motion.div>
       ))}
+
+      {/* Game over: soften the board instead of dumping text below it */}
+      {gameOver && (
+        <motion.div
+          className="absolute inset-0 rounded-2xl bg-background/70 backdrop-blur-[2px] flex flex-col items-center justify-center gap-1"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <span className="text-xl font-display font-bold gradient-text">Game Over</span>
+          <span className="text-[11px] text-muted-foreground font-body">Tap New Game to try again</span>
+        </motion.div>
+      )}
     </div>
   );
 }

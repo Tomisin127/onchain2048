@@ -153,7 +153,7 @@ export function LoginScreen({
         </div>
       </Card>
 
-      <Leaderboard />
+      <Leaderboard collapsible defaultOpen={false} className="animate-fade-in" />
       </div>
     </div>
 
