@@ -845,7 +845,7 @@ export default function Game2048Page() {
     },
     [isSelfPayConnected, selfPaySendArbitraryTx, sendTransaction]
   );
-  const { displayName: baseDisplayName } = useBaseName(walletAddr);
+
 
   // Publish the player's best score to the live leaderboard (debounced).
   useEffect(() => {
