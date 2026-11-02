@@ -902,7 +902,7 @@ export default function Game2048Page() {
   };
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-background px-4 py-3 flex flex-col">
+    <div className="h-[100dvh] overflow-hidden bg-background px-4 py-3 flex flex-col justify-center">
       <SwapModal 
         walletAddress={walletAddr} 
         onSwapSuccess={handleRefreshBalance}
