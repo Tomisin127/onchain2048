@@ -22,6 +22,7 @@ import { useGameSounds } from '@/hooks/useGameSounds';
 import { use2048Game } from '@/hooks/use2048Game';
 import { Direction } from '@/types/game';
 import { useBaseName } from '@/hooks/useBaseName';
+import { getBaseProvider } from '@/lib/baseProvider';
 import {
   B20_TOKEN_ADDRESS,
   B20_MOVE_COST_WEI,
@@ -75,6 +76,14 @@ export default function Game2048Page() {
     mode: selfPayMode,
   } = useSelfPayWallet();
 
+  const [embeddedWalletAddress, setEmbeddedWalletAddress] = useState('');
+
+  // The wallet identity used for balances, the leaderboard and the high score.
+  // In self-pay advanced mode that's the relayer; otherwise the connected wallet.
+  const walletAddr = isSelfPayConnected
+    ? selfPayAddress
+    : embeddedWalletAddress || baseAddress || selfPayAddress || '';
+
   const {
     tiles,
     score,
@@ -82,14 +91,13 @@ export default function Game2048Page() {
     gameOver,
     makeMove: gameMakeMove,
     initGame,
-  } = use2048Game();
+  } = use2048Game(walletAddr);
 
   const [balance, setBalance] = useState('0');
   const [b20BalanceWei, setB20BalanceWei] = useState<bigint>(BigInt(0));
   const [ethPrice, setEthPrice] = useState(3000);
   const [remainingMoves, setRemainingMoves] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [embeddedWalletAddress, setEmbeddedWalletAddress] = useState('');
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
   const [pendingTransactions, setPendingTransactions] = useState<string[]>([]);
@@ -179,7 +187,10 @@ export default function Game2048Page() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch wallet balances (native ETH + B20 token)
+  // Fetch wallet balances (native ETH + B20 token) through one shared provider.
+  // State is only written when a value actually changed, so balances update
+  // immediately after a move or swap without extra re-renders.
+  const lastBalancesRef = useRef({ eth: '', b20: 0n, allowance: 0n });
   const fetchBalance = useCallback(async () => {
     // Match the walletAddr priority so the displayed balance always matches the
     // wallet shown on screen (especially the self-pay relayer in advanced mode).
@@ -188,7 +199,7 @@ export default function Game2048Page() {
       : embeddedWalletAddress || baseAddress || selfPayAddress;
     if (!addr) return;
     try {
-      const provider = new ethers.JsonRpcProvider('https://mainnet.base.org');
+      const provider = getBaseProvider();
       const token = new ethers.Contract(B20_TOKEN_ADDRESS, ERC20_BALANCE_OF_ABI, provider);
       const [balanceWei, b20Wei, allowanceWei] = await Promise.all([
         provider.getBalance(addr),
@@ -209,6 +220,19 @@ export default function Game2048Page() {
           }
         })(),
       ]);
+      const prev = lastBalancesRef.current;
+      if (
+        balanceWei.toString() === prev.eth &&
+        b20Wei === prev.b20 &&
+        allowanceWei === prev.allowance
+      ) {
+        return;
+      }
+      lastBalancesRef.current = {
+        eth: balanceWei.toString(),
+        b20: b20Wei,
+        allowance: allowanceWei,
+      };
       const balanceEth = ethers.formatEther(balanceWei);
       setBalance(balanceEth);
       setB20BalanceWei(b20Wei);
@@ -220,12 +244,19 @@ export default function Game2048Page() {
     } catch (error) {
       console.error('Error fetching balance:', error);
     }
-  }, [embeddedWalletAddress, baseAddress, selfPayAddress, isSelfPayConnected, ethPrice]);
+  }, [embeddedWalletAddress, baseAddress, selfPayAddress, isSelfPayConnected]);
 
   useEffect(() => {
-    fetchBalance();
-    const interval = setInterval(fetchBalance, 5000);
-    return () => clearInterval(interval);
+    void fetchBalance();
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') void fetchBalance();
+    }, 3000);
+    const onFocus = () => void fetchBalance();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [fetchBalance]);
 
   useEffect(() => {
@@ -516,6 +547,7 @@ export default function Game2048Page() {
             if (txHash) {
               setPendingTransactions(prev => [...prev, txHash]);
               console.log('✅ Contract makeMove sent on Base:', txHash);
+              void fetchBalance();
             } else {
               console.warn('Move tx sent but hash missing:', txResult);
             }
@@ -554,6 +586,7 @@ export default function Game2048Page() {
             if (callsId) {
               setPendingTransactions(prev => [...prev, callsId]);
               console.log('✅ Sub Account tx sent:', callsId);
+              void fetchBalance();
             }
           } catch (error) {
             console.error('[v0] ❌ Sub Account transaction failed:', error);
@@ -598,6 +631,7 @@ export default function Game2048Page() {
               if (txHash) {
                 setPendingTransactions(prev => [...prev, txHash]);
                 console.log('Advanced relay contract tx sent:', txHash);
+                void fetchBalance();
               }
             } catch (error) {
               console.error('Advanced relay transaction failed:', error);
@@ -618,6 +652,7 @@ export default function Game2048Page() {
             if (txHash) {
               setPendingTransactions(prev => [...prev, txHash]);
               console.log('Pay-per-move contract tx sent:', txHash);
+              void fetchBalance();
               const result = gameMakeMove(direction);
               if (result.moved) {
                 playMoveSound();
@@ -787,11 +822,7 @@ export default function Game2048Page() {
   const isConnected = authenticated || isBaseConnected || isSelfPayConnected;
 
 
-  // Prioritize the self-pay wallet when active, since that's the wallet the user
-  // explicitly logged in with (and in advanced mode it's the relayer that holds funds).
-  const walletAddr = isSelfPayConnected
-    ? selfPayAddress
-    : embeddedWalletAddress || baseAddress || selfPayAddress || '';
+  const { displayName: baseDisplayName } = useBaseName(walletAddr);
 
   // Unified sendTransaction for the SwapModal so swaps use whichever wallet is active.
   // - Self-pay (advanced or pay-per-move): route through the self-pay wallet
@@ -970,16 +1001,11 @@ export default function Game2048Page() {
         <Card className="p-2.5 glass-card flex flex-col items-center">
           <GameBoard
             tiles={tiles}
+            gameOver={gameOver}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
             cellSize={cellSize}
           />
-
-          {gameOver && (
-            <div className="text-center mt-2">
-              <div className="text-base font-display font-bold text-destructive">Game Over</div>
-            </div>
-          )}
 
           <Button
             onClick={handleNewGame}
