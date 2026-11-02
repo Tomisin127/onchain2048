@@ -97,82 +97,85 @@ export function Leaderboard({
 
   return (
     <section className={cn('glass-card rounded-xl p-3', className)} aria-label="Leaderboard">
-      <div className="flex items-center justify-between gap-2">
-        {collapsible ? (
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            className="flex items-center gap-1.5 font-display text-sm font-bold text-foreground transition-colors hover:text-primary"
-          >
-            {header}
-            <ChevronDown
-              className={cn(
-                'h-4 w-4 text-muted-foreground transition-transform',
-                open && 'rotate-180',
-              )}
-              aria-hidden
-            />
-          </button>
-        ) : (
-          header
-        )}
+      {/* TabsList must live inside <Tabs>, so the whole header row sits within it */}
+      <Tabs defaultValue="scores">
+        <div className="flex items-center justify-between gap-2">
+          {collapsible ? (
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+              className="flex items-center gap-1.5 font-display text-sm font-bold text-foreground transition-colors hover:text-primary"
+            >
+              {header}
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 text-muted-foreground transition-transform',
+                  open && 'rotate-180',
+                )}
+                aria-hidden
+              />
+            </button>
+          ) : (
+            header
+          )}
+
+          {open && (
+            <TabsList className="h-7">
+              <TabsTrigger value="scores" className="h-6 px-2 text-[11px]">
+                High Scores
+              </TabsTrigger>
+              <TabsTrigger value="holders" className="h-6 px-2 text-[11px]">
+                $B20 Holders
+              </TabsTrigger>
+            </TabsList>
+          )}
+        </div>
 
         {open && (
-          <TabsList className="h-7">
-            <TabsTrigger value="scores" className="h-6 px-2 text-[11px]">
-              High Scores
-            </TabsTrigger>
-            <TabsTrigger value="holders" className="h-6 px-2 text-[11px]">
-              $B20 Holders
-            </TabsTrigger>
-          </TabsList>
+          <>
+            <TabsContent value="scores" className="mt-2">
+              {loadingScores ? (
+                <Empty label="Loading scores…" />
+              ) : scores.length === 0 ? (
+                <Empty label="No scores yet — be the first!" />
+              ) : (
+                <ol className="space-y-1">
+                  {scores.map((s, i) => (
+                    <Row
+                      key={s.address}
+                      index={i}
+                      address={s.address}
+                      value={s.score.toLocaleString()}
+                      highlight={!!me && s.address.toLowerCase() === me}
+                    />
+                  ))}
+                </ol>
+              )}
+            </TabsContent>
+
+            <TabsContent value="holders" className="mt-2">
+              {loadingHolders ? (
+                <Empty label="Reading balances from Base…" />
+              ) : holders.length === 0 ? (
+                <Empty label="Holder data syncing from the chain…" />
+              ) : (
+                <ol className="space-y-1">
+                  {holders.map((h, i) => (
+                    <Row
+                      key={h.address}
+                      index={i}
+                      address={h.address}
+                      value={`${formatAmount(h.balance)} B20`}
+                      highlight={!!me && h.address.toLowerCase() === me}
+                    />
+                  ))}
+                </ol>
+              )}
+            </TabsContent>
+          </>
         )}
-      </div>
-
-      {open && (
-        <Tabs defaultValue="scores">
-          <TabsContent value="scores" className="mt-2">
-            {loadingScores ? (
-              <Empty label="Loading scores…" />
-            ) : scores.length === 0 ? (
-              <Empty label="No scores yet — be the first!" />
-            ) : (
-              <ol className="space-y-1">
-                {scores.map((s, i) => (
-                  <Row
-                    key={s.address}
-                    index={i}
-                    address={s.address}
-                    value={s.score.toLocaleString()}
-                    highlight={!!me && s.address.toLowerCase() === me}
-                  />
-                ))}
-              </ol>
-            )}
-          </TabsContent>
-
-          <TabsContent value="holders" className="mt-2">
-            {loadingHolders ? (
-              <Empty label="Reading balances from Base…" />
-            ) : holders.length === 0 ? (
-              <Empty label="Holder data syncing from the chain…" />
-            ) : (
-              <ol className="space-y-1">
-                {holders.map((h, i) => (
-                  <Row
-                    key={h.address}
-                    index={i}
-                    address={h.address}
-                    value={`${formatAmount(h.balance)} B20`}
-                    highlight={!!me && h.address.toLowerCase() === me}
-                  />
-                ))}
-              </ol>
-            )}
-          </TabsContent>
-        </Tabs>
-      )}
+      </Tabs>
     </section>
   );
 }
